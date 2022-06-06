@@ -1,0 +1,7 @@
+{ Filter = { Bundles = (
+    "com.ea.ios.apexlegendsmobilefps",
+    "com.bhvr.deadbydaylight",
+    "com.studiowildcard.wardrumstudios.ark",
+    "com.tencent.ig");
+  }; 
+}
