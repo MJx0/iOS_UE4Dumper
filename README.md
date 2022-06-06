@@ -43,7 +43,7 @@ After this a third pop-up will appear showing you the optional function to direc
 * ObjObjects dump
 
 ##### script.json
-* If you are familiar with Il2cppDumper scipt.json, this is similar
+* If you are familiar with Il2cppDumper script.json, this is similar
 * It contains a json array of function names and addresses
 
 ## How to transfer the dump from the device to the pc without SSH connection
