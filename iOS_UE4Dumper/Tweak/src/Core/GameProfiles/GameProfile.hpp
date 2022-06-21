@@ -19,33 +19,14 @@ class IGameProfile
 public:
     virtual ~IGameProfile() = default;
 
-    virtual memory_file_info GetExecutableInfo()
-    {
-        return {};
-    }
+    virtual memory_file_info GetExecutableInfo() = 0;
 
-    virtual bool IsUsingFNamePool()
-    {
-        return false;
-    }
+    virtual bool IsUsingFNamePool() = 0;
 
-    virtual uintptr_t GetGUObjectArrayPtr()
-    {
-        return 0;
-    }
+    virtual uintptr_t GetGUObjectArrayPtr() = 0;
 
-    virtual uintptr_t GetFNamePoolDataPtr()
-    {
-        return 0;
-    }
+    // GNames / FNamePoolData
+    virtual uintptr_t GetNamesPtr() = 0;
 
-    virtual uintptr_t GetGNamesPtr()
-    {
-        return 0;
-    }
-
-    virtual Offsets *GetOffsets()
-    {
-        return NULL;
-    }
+    virtual Offsets *GetOffsets() = 0; 
 };

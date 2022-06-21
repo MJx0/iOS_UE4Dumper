@@ -12,6 +12,7 @@
 
 DumpTransferUI *dumpTransferUI = nil;
 
+#include <hash/hash.h>
 #include "Core/Dumper.hpp"
 
 #define WAIT_TIME_SEC 15
@@ -39,6 +40,8 @@ void *dump_thread(void *)
   NSString *docDir = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES)[0];
 
   NSString *appName = [[[NSBundle mainBundle] infoDictionary] objectForKey:(id)kCFBundleNameKey];
+  NSString *appID = [[[NSBundle mainBundle] infoDictionary] objectForKey:(id)kCFBundleIdentifierKey];
+
   NSString *dumpFolderName = [NSString stringWithFormat:@"%@_%@", [appName stringByReplacingOccurrencesOfString:@" " withString:@""], DUMP_FOLDER];
 
   NSString *dumpPath = [NSString stringWithFormat:@"%@/%@", docDir, dumpFolderName];
@@ -48,11 +51,10 @@ void *dump_thread(void *)
 
   NSFileManager *fileManager = [NSFileManager defaultManager];
 
+  [fileManager removeItemAtPath:dumpPath error:nil];
+  [fileManager removeItemAtPath:[NSString stringWithFormat:@"%@.zip", dumpPath] error:nil];
+
   NSError *error = nil;
-  if ([fileManager fileExistsAtPath:dumpPath])
-  {
-    [fileManager removeItemAtPath:dumpPath error:&error];
-  }
 
   if (![fileManager createDirectoryAtPath:headersdumpPath withIntermediateDirectories:YES attributes:nil error:&error])
   {
@@ -64,7 +66,7 @@ void *dump_thread(void *)
   // arguments
   // 1 string dump_dir, 2 string dump_headers_dir
   // 3 bool dump_objects, 4 bool dump_full, 5 bool dump_headers, 6 bool gen_functions_script;
-  Dumper::DumpArgs dumpersArgs = {
+  Dumper::DumpArgs dumperArgs = {
       dumpPath.UTF8String, headersdumpPath.UTF8String,
       true, true, true, true};
 
@@ -72,27 +74,34 @@ void *dump_thread(void *)
   showWaiting(@"Dumping...", &waitingAlert);
 
   Dumper::DumpStatus dumpStatus = Dumper::UE_DS_NONE;
+  switch (Hash(appID.UTF8String, appID.length))
+  {
+  case HASH("com.ea.ios.apexlegendsmobilefps"):
+    dumpStatus = Dumper::Dump(&dumperArgs, &apexProfile);
+    break;
 
-  if (apexProfile.GetExecutableInfo().address != 0)
-  {
-    dumpStatus = Dumper::Dump(&dumpersArgs, &apexProfile);
-  }
-  else if (dbdProfile.GetExecutableInfo().address != 0)
-  {
-    dumpStatus = Dumper::Dump(&dumpersArgs, &dbdProfile);
-  }
-  else if (arkProfile.GetExecutableInfo().address != 0)
-  {
-    dumpStatus = Dumper::Dump(&dumpersArgs, &arkProfile);
-  }
-  else if (pubgmProfile.GetExecutableInfo().address != 0)
-  {
-    dumpStatus = Dumper::Dump(&dumpersArgs, &pubgmProfile);
+  case HASH("com.bhvr.deadbydaylight"):
+    dumpStatus = Dumper::Dump(&dumperArgs, &dbdProfile);
+    break;
+
+  case HASH("com.studiowildcard.wardrumstudios.ark"):
+    dumpStatus = Dumper::Dump(&dumperArgs, &arkProfile);
+    break;
+
+  case HASH("com.tencent.ig"):
+    dumpStatus = Dumper::Dump(&dumperArgs, &pubgmProfile);
+    break;
+
+  default:
+    break;
   }
 
-  NSString *zipPath = [NSString stringWithFormat:@"%@/%@.zip", docDir, dumpFolderName];
-  [SSZipArchive createZipFileAtPath:zipPath withContentsOfDirectory:dumpPath];
-  [fileManager removeItemAtPath:dumpPath error:&error];
+  NSString *zipPath = [NSString stringWithFormat:@"%@.zip", dumpPath];
+  if ([fileManager fileExistsAtPath:dumpPath])
+  {
+    [SSZipArchive createZipFileAtPath:zipPath withContentsOfDirectory:dumpPath];
+    [fileManager removeItemAtPath:dumpPath error:nil];
+  }
 
   dismisWaiting(waitingAlert);
 
@@ -100,7 +109,7 @@ void *dump_thread(void *)
   {
     if (dumpStatus == Dumper::UE_DS_NONE)
     {
-      showError(@"Not Supported!");
+      showError(@"Not Supported | Check AppID.");
     }
     else
     {
@@ -134,7 +143,7 @@ void *dump_thread(void *)
       [transferAlert showEdit:vc title:@___ALERT_TITLE subTitle:@"Do you want to transfer dump over IP?" closeButtonTitle:@"No" duration:0.0f];
     }];
 
-      [okAlert showSuccess:vc title:@___ALERT_TITLE subTitle:[NSString stringWithFormat:@"Dump at: \n%@", zipPath] closeButtonTitle:@"Ok" duration:0.0f];
+    [okAlert showSuccess:vc title:@___ALERT_TITLE subTitle:[NSString stringWithFormat:@"Dump at: \n%@", zipPath] closeButtonTitle:@"Ok" duration:0.0f];
   });
 
   return NULL;

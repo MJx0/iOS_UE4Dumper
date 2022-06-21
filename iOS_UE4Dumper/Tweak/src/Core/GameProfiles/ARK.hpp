@@ -53,7 +53,7 @@ public:
         return (page_off + adrp_pc_rel + add_imm12);
     }
 
-    uintptr_t GetGNamesPtr() override
+    uintptr_t GetNamesPtr() override
     {
         const mach_header_64 *hdr = GetExecutableInfo().header;
 

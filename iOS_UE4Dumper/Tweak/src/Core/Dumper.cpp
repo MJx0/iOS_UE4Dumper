@@ -67,18 +67,6 @@ namespace Dumper
 
 		Profile::isUsingFNamePool = gameProfile->IsUsingFNamePool();
 
-		if (Profile::isUsingFNamePool)
-		{
-			Profile::FNamePoolPtr = gameProfile->GetFNamePoolDataPtr();
-			if (Profile::FNamePoolPtr == 0)
-				return UE_DS_ERROR_INIT_GNAMES;
-		}
-		else
-		{
-			Profile::GNamesPtr = gameProfile->GetGNamesPtr();
-			if (Profile::GNamesPtr == 0)
-				return UE_DS_ERROR_INIT_NAMEPOOL;
-		}
 
 		uintptr_t GUObjectsArrayPtr = gameProfile->GetGUObjectArrayPtr();
 		if (GUObjectsArrayPtr == 0)
@@ -87,6 +75,20 @@ namespace Dumper
 		Profile::ObjObjectsPtr = GUObjectsArrayPtr + Profile::offsets.FUObjectArray.ObjObjects;
 		if (!vm_rpm_ptr((void *)Profile::ObjObjectsPtr, &Profile::ObjObjects, sizeof(TUObjectArray)))
 			return UE_DS_ERROR_INIT_GUOBJECTARRAY;
+
+
+		if (Profile::isUsingFNamePool)
+		{
+			Profile::FNamePoolPtr = gameProfile->GetNamesPtr();
+			if (Profile::FNamePoolPtr == 0)
+				return UE_DS_ERROR_INIT_NAMEPOOL;
+		}
+		else
+		{
+			Profile::GNamesPtr = gameProfile->GetNamesPtr();
+			if (Profile::GNamesPtr == 0)
+				return UE_DS_ERROR_INIT_GNAMES;
+		}
 
 		return UE_DS_NONE;
 	}
