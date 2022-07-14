@@ -58,8 +58,8 @@ public:
     uintptr_t GetNamesPtr() override
     {
         const mach_header_64 *hdr = GetExecutableInfo().header;
-
-        const char *pattern = "\x4C\x39\x00\x00\x00\x37\x00\x00\x00\x00\x00\x00\x00\x91\x00\x00\x00\x94";
+        //Pubg v 2.1 pattern 
+        const char *pattern = "\x5F\x39\x00\x00\x00\x37\x00\x00\x00\x00\x00\x00\x00\x91\x00\x00\x00\x94";
         const char *mask = "xx??xx???????x??xx";
         const int step = 6;
 
