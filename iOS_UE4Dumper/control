@@ -1,6 +1,6 @@
 Package: com.kitty.ue4dumper
 Name: UE4Dumper
-Version: 1.0.2
+Version: 1.0.3
 Architecture: iphoneos-arm
 Description: An awesome MobileSubstrate tweak!
 Maintainer: CyberCat
