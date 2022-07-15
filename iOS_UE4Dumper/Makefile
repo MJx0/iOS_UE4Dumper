@@ -5,6 +5,8 @@ ARCHS = arm64 arm64e
 DEBUG = 0
 FINALPACKAGE = 1
 
+IGNORE_WARNINGS = 0
+
 # set to 1 if you want to use memcpy instead of vm_read_overwrite
 # memcpy will speed up the dumping process by a lot but may crash on any invalid address
 # use it if you trust your addresses
@@ -25,8 +27,14 @@ $(wildcard Tweak/includes/GCDAsyncSocket/*.m) \
 $(wildcard Tweak/includes/SSZipArchive/SSZipArchive.m) $(wildcard Tweak/includes/SSZipArchive/minizip/*.c)
 
 $(TWEAK_NAME)_CFLAGS = -fobjc-arc $(ZIP_ARCHIVE_DEFINES)
+ifeq ($(IGNORE_WARNINGS), 1)
+$(TWEAK_NAME)_CFLAGS += -w
+endif
 
-$(TWEAK_NAME)_CCFLAGS = -std=c++17 -ITweak/includes -O2
+$(TWEAK_NAME)_CCFLAGS = -std=c++17 -ITweak/includes -O3
+ifeq ($(IGNORE_WARNINGS), 1)
+$(TWEAK_NAME)_CCFLAGS += -w
+endif
 ifeq ($(RPM_USE_MEMCPY), 1)
 $(TWEAK_NAME)_CCFLAGS += -DRPM_USE_MEMCPY
 endif

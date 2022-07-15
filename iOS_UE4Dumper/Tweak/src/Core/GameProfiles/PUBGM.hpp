@@ -59,9 +59,9 @@ public:
     {
         const mach_header_64 *hdr = GetExecutableInfo().header;
 
-        const char *pattern = "\x4C\x39\x00\x00\x00\x37\x00\x00\x00\x00\x00\x00\x00\x91\x00\x00\x00\x94";
-        const char *mask = "xx??xx???????x??xx";
-        const int step = 6;
+        const char *pattern = "\x08\x01\x00\x39\x00\x00\x00\x37\x00\x00\x00\x00\x00\x00\x00\x91\x00\x00\x00\x94";
+        const char *mask = "xx?x??xx???????x??xx";
+        const int step = 8;
 
         uintptr_t insn_address = KittyScanner::find_from_segment64(hdr, "__TEXT", pattern, mask);
         if (insn_address == 0)
