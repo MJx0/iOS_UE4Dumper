@@ -13,30 +13,28 @@
 class MemoryBackup
 {
 private:
-    void *_address;
+    uintptr_t _address;
     size_t _size;
 
     std::vector<uint8_t> _orig_code;
 
-    std::string _hexString;
-
 public:
     MemoryBackup();
+    ~MemoryBackup();
 
     /*
      * expects library name and relative address
      */
-    MemoryBackup(const char *fileName, uint64_t address, size_t backup_size);
+    MemoryBackup(const char *fileName, uintptr_t address, size_t backup_size);
 
     /*
      * expects absolute address
      */
-    MemoryBackup(uint64_t absolute_address, size_t backup_size);
-
-    ~MemoryBackup();
+    MemoryBackup(uintptr_t absolute_address, size_t backup_size);
+    
 
     /*
-     * Validate patch
+     * Validate backup
      */
     bool isValid() const;
 
@@ -45,7 +43,7 @@ public:
     /*
      * Returns pointer to the target address
      */
-    void *get_TargetAddress() const;
+    uintptr_t get_TargetAddress() const;
 
     /*
      * Restores backup code
@@ -55,5 +53,7 @@ public:
     /*
      * Returns current target address bytes as hex string
      */
-    std::string get_CurrBytes();
+    std::string get_CurrBytes() const;
+
+    std::string get_OrigBytes() const;
 };

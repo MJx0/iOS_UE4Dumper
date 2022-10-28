@@ -14,13 +14,11 @@
 class MemoryPatch
 {
 private:
-    void *_address;
+    uintptr_t _address;
     size_t _size;
 
     std::vector<uint8_t> _orig_code;
     std::vector<uint8_t> _patch_code;
-
-    std::string _hexString;
 
 public:
     MemoryPatch();
@@ -28,13 +26,13 @@ public:
     /*
      * expects an already calculated address
      */
-    MemoryPatch(uint64_t absolute_address,
+    MemoryPatch(uintptr_t absolute_address,
                 const void *patch_code, size_t patch_size);
 
     /*
      * expects file name and relative address, you can pass NULL as filename for base executable
      */
-    MemoryPatch(const char *fileName, uint64_t address,
+    MemoryPatch(const char *fileName, uintptr_t address,
                 const void *patch_code, size_t patch_size);
 
     ~MemoryPatch();
@@ -42,8 +40,8 @@ public:
     /*
      * compatible hex format (0xffff & ffff & ff ff)
      */
-    static MemoryPatch createWithHex(const char *fileName, uint64_t address, std::string hex);
-    static MemoryPatch createWithHex(uint64_t absolute_address, std::string hex);
+    static MemoryPatch createWithHex(const char *fileName, uintptr_t address, std::string hex);
+    static MemoryPatch createWithHex(uintptr_t absolute_address, std::string hex);
 
     /*
      * Validate patch
@@ -55,7 +53,7 @@ public:
     /*
      * Returns pointer to the target address
      */
-    void *get_TargetAddress() const;
+    uintptr_t get_TargetAddress() const;
 
     /*
      * Restores patch to original value
@@ -70,5 +68,9 @@ public:
     /*
      * Returns current patch target address bytes as hex string
      */
-    std::string get_CurrBytes();
+    std::string get_CurrBytes() const;
+    
+    std::string get_OrigBytes() const;
+    
+    std::string get_PatchBytes() const;
 };

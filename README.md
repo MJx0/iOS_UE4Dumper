@@ -18,6 +18,8 @@ project.
 * Apex Legends Mobile
 * PUBGM International
 * ARK Survival
+* eFootBall 2023 (PES Mobile)
+* Distyle
 
 ## Usage
 Download the pre-compiled deb or compile it by yourself.
@@ -70,7 +72,7 @@ nc -l <port> > <filename>.zip
 ```
 ## Adding a new game to the Dumper
 Follow the prototype in Tweak/src/Core/GameProfiles<br/>
-You can also use the provided patterns to find GUObjectArray, GNames and FNamePoolData.
+You can also use the provided patterns to find GUObjectArray, GNames or NamePoolData.
 
 
 ## Credits & Thanks
