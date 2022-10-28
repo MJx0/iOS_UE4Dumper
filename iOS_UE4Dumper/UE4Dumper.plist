@@ -2,6 +2,8 @@
     "com.ea.ios.apexlegendsmobilefps",
     "com.bhvr.deadbydaylight",
     "com.studiowildcard.wardrumstudios.ark",
-    "com.tencent.ig");
+    "com.tencent.ig",
+    "jp.konami.pesactionmobile",
+    "com.lilithgames.xgame.ios.global");
   }; 
 }

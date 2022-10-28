@@ -10,25 +10,30 @@ class PUBGMProfile : public IGameProfile
 public:
     PUBGMProfile() = default;
 
-    memory_file_info GetExecutableInfo() override
+    std::string GetAppID() const override
+    {
+        return "com.tencent.ig";
+    }
+
+    MemoryFileInfo GetExecutableInfo() const override
     {
         return KittyMemory::getMemoryFileInfo("ShadowTrackerExtra");
     }
 
-    bool IsUsingFNamePool() override
+    bool IsUsingFNamePool() const override
     {
         return false;
     }
 
-    uintptr_t GetGUObjectArrayPtr() override
+    uintptr_t GetGUObjectArrayPtr() const override
     {
-        const mach_header_64 *hdr = GetExecutableInfo().header;
+        const mach_header *hdr = GetExecutableInfo().header;
 
-        const char *pattern = "\x80\xB9\x00\x00\x00\x00\x00\x00\x00\x91\x00\x00\x40\xF9\x00\x03\x80\x52";
+        const char *bytes = "\x80\xB9\x00\x00\x00\x00\x00\x00\x00\x91\x00\x00\x40\xF9\x00\x03\x80\x52";
         const char *mask = "xx???????x??xx?xxx";
         const int step = 2;
 
-        uintptr_t insn_address = KittyScanner::find_from_segment64(hdr, "__TEXT", pattern, mask);
+        uintptr_t insn_address = KittyScanner::findBytesFirst(hdr, "__TEXT", bytes, mask);
         if (insn_address == 0)
             return 0;
 
@@ -55,15 +60,15 @@ public:
         return (page_off + adrp_pc_rel + add_imm12);
     }
 
-    uintptr_t GetNamesPtr() override
+    uintptr_t GetNamesPtr() const override
     {
-        const mach_header_64 *hdr = GetExecutableInfo().header;
+        const mach_header *hdr = GetExecutableInfo().header;
 
-        const char *pattern = "\x08\x01\x00\x39\x00\x00\x00\x37\x00\x00\x00\x00\x00\x00\x00\x91\x00\x00\x00\x94";
-        const char *mask = "xx?x??xx???????x??xx";
+        const char *bytes = "\xE0\x00\x00\x91\x00\x09\x00\x94\x00\x00\x02";
+        const char *mask = "x?xx?xxx??x";
         const int step = 8;
 
-        uintptr_t insn_address = KittyScanner::find_from_segment64(hdr, "__TEXT", pattern, mask);
+        uintptr_t insn_address = KittyScanner::findBytesFirst(hdr, "__TEXT", bytes, mask);
         if (insn_address == 0)
             return 0;
             
@@ -105,7 +110,7 @@ public:
         return vm_rpm_ptr<uintptr_t>((void *)(var_5[0]));
     }
 
-    Offsets *GetOffsets() override
+    Offsets *GetOffsets() const override
     {
         struct
         {
@@ -155,12 +160,12 @@ public:
             {
                 uint16 SuperStruct = 0x30; // sizeof(UField)
                 uint16 Children = 0x38;    // UField*
-                uint16 ChildrenProps = 0;  // not needed in versions older than UE4.23
+                uint16 ChildrenProps = 0;  // not needed in versions older than UE4.25
                 uint16 PropertiesSize = 0x40;
             } UStruct;
             struct
             {
-                uint16 Names = 0x40; // usually at sizeof(UField) + 1 pointer
+                uint16 Names = 0x40; // usually at sizeof(UField) + sizeof(FString)
             } UEnum;
             struct
             {
@@ -171,14 +176,14 @@ public:
                 uint16 Func = EFunctionFlags + 0x28; // ue3-ue4, always +0x28 from flags location.
             } UFunction;
             struct
-            {
+            { // not needed in versions older than UE4.25
                 uint16 ClassPrivate = 0;
                 uint16 Next = 0;
                 uint16 NamePrivate = 0;
                 uint16 FlagsPrivate = 0;
             } FField;
             struct
-            { // not needed in versions older than UE4.23
+            { // not needed in versions older than UE4.25
                 uint16 ArrayDim = 0;
                 uint16 ElementSize = 0;
                 uint16 PropertyFlags = 0;

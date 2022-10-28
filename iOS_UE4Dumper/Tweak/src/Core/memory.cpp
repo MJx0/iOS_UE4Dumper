@@ -1,15 +1,19 @@
 #include "memory.hpp"
 
+#include <mach-o/dyld.h>
+#include <mach-o/getsect.h>
+#include <mach/mach.h>
+
 #include <vector>
 
 bool vm_rpm_ptr(void *address, void *result, size_t len)
 {
-    if (address == NULL)
+    if (!address)
         return false;
 
         // faster but will crash on any invalid address
 #ifdef RPM_USE_MEMCPY
-    return memcpy(result, address, len) != NULL;
+    return memcpy(result, address, len) != nullptr;
 #else
 
     vm_size_t outSize = 0;
@@ -42,4 +46,17 @@ std::string vm_rpm_str(void *address, int max_len)
         return "";
 
     return str;
+}
+
+uint8_t *GetSegmentData(const void *hdr, const char *seg, unsigned long *sz)
+{
+    if(!hdr || !seg) return nullptr;
+
+#if defined(__arm64e__) || defined(__arm64__) || defined(__aarch64__)
+    const mach_header_64 *header = (const mach_header_64 *)hdr;
+#else
+    const mach_header *header = (const mach_header *)hdr;
+#endif
+
+    return getsegmentdata(header, seg, sz);
 }

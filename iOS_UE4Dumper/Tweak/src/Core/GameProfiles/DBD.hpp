@@ -8,25 +8,33 @@
 class DBDProfile : public IGameProfile
 {
 public:
-    memory_file_info GetExecutableInfo() override
+    DBDProfile() = default;
+
+    std::string GetAppID() const override
+    {
+        return "com.bhvr.deadbydaylight";
+    }
+
+    MemoryFileInfo GetExecutableInfo() const override
     {
         return KittyMemory::getMemoryFileInfo("DeadByDaylight");
     }
 
-    bool IsUsingFNamePool() override
+    bool IsUsingFNamePool() const override
     {
         return true;
     }
 
-    uintptr_t GetGUObjectArrayPtr() override
+    uintptr_t GetGUObjectArrayPtr() const override
     {
-        const mach_header_64 *hdr = GetExecutableInfo().header;
+        const mach_header *hdr = GetExecutableInfo().header;
 
-        const char *pattern = "\xFF\x9F\x52\x00\x00\x00\x00\x00\x00\x00\x91\x00\x00\x80\x52";
-        const char *mask = "xxx???????x??xx";
-        const int step = 3;
+        // FUObjectArray::FUObjectArray();
+        const char *hex = "E1 23 00 91 00 00 00 94 E0 23 00 91 00 00 00 94 08 7D 80 52";
+        const char *mask = "xxxx???xxxxx???xxxxx";
+        const int step = 0x18;
 
-        uintptr_t insn_address = KittyScanner::find_from_segment64(hdr, "__TEXT", pattern, mask);
+        uintptr_t insn_address = KittyScanner::findHexFirst(hdr, "__TEXT", hex, mask);
         if (insn_address == 0)
             return 0;
 
@@ -53,15 +61,16 @@ public:
         return (page_off + adrp_pc_rel + add_imm12);
     }
 
-    uintptr_t GetNamesPtr() override
+    uintptr_t GetNamesPtr() const override
     {
-        const mach_header_64 *hdr = GetExecutableInfo().header;
+        const mach_header *hdr = GetExecutableInfo().header;
 
-        const char *pattern = "\x37\x00\x00\x02\xD0\x00\x00\x00\x91\x00\x00\xFF\x97\x00\x00\x80\x52";
-        const char *mask = "x??xxxx?x??xx?xxx";
-        const int step = 1;
+        // FNameEntry const* FName::GetEntry(FNameEntryId id);
+        const char *hex = "F6 57 BD A9 F4 4F 01 A9 FD 7B 02 A9 FD 83 00 91 F3 03 00 AA 00 00 00 00 A8 02 00 39";
+        const char *mask = "xxxxxxxxxxxxxxxxxxxx????xx?x";
+        const int step = 0x1C;
 
-        uintptr_t insn_address = KittyScanner::find_from_segment64(hdr, "__TEXT", pattern, mask);
+        uintptr_t insn_address = KittyScanner::findHexFirst(hdr, "__TEXT", hex, mask);
         if (insn_address == 0)
             return 0;
 
@@ -88,7 +97,7 @@ public:
         return (page_off + adrp_pc_rel + add_imm12);
     }
 
-    Offsets *GetOffsets() override
+    Offsets *GetOffsets() const override
     {
         struct
         {
@@ -143,7 +152,7 @@ public:
             } UStruct;
             struct
             {
-                uint16 Names = 0x48; // usually at sizeof(UField) + 1 pointer
+                uint16 Names = 0x48; // usually at sizeof(UField) + sizeof(FString)
             } UEnum;
             struct
             {
@@ -151,7 +160,7 @@ public:
                 uint16 NumParams = EFunctionFlags + 0x4;
                 uint16 ParamSize = NumParams + 0x2;
                 uint16 ReturnValueOffset = ParamSize + 0x2;
-                uint16 Func = 0xB8 + 0x28; // ue3-ue4, always +0x28 from flags location
+                uint16 Func = EFunctionFlags + 0x28; // ue3-ue4, always +0x28 from flags location
             } UFunction;
             struct
             {
@@ -169,7 +178,7 @@ public:
                 uint16 Size = 0x80; // sizeof(FProperty)
             } FProperty;
             struct
-            { // not needed in UE4.23+
+            { // not needed in UE4.25+
                 uint16 ArrayDim = 0;
                 uint16 ElementSize = 0;
                 uint16 PropertyFlags = 0;

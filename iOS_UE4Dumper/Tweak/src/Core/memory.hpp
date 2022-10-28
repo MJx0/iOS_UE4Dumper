@@ -22,3 +22,5 @@ T vm_rpm_ptr(void *address)
 }
 
 std::string vm_rpm_str(void *address, int max_len = 0xff);
+
+uint8_t *GetSegmentData(const void*, const char*, unsigned long*);

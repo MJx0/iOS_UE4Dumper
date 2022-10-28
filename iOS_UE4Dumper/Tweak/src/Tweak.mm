@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <string>
 #include <fstream>
+#include <utility>
 #include <thread>
 
 #import <SCLAlertView/SCLAlertView.h>
@@ -22,11 +23,45 @@ DumpTransferUI *dumpTransferUI = nil;
 #include "Core/GameProfiles/DBD.hpp"
 #include "Core/GameProfiles/ARK.hpp"
 #include "Core/GameProfiles/PUBGM.hpp"
+#include "Core/GameProfiles/PES.hpp"
+#include "Core/GameProfiles/Distyle.hpp"
 
-ApexProfile apexProfile;
-DBDProfile dbdProfile;
-ArkProfile arkProfile;
-PUBGMProfile pubgmProfile;
+// DumpArgs
+// 1 string dump_dir, 2 string dump_headers_dir (App documents folder)
+// 3 bool dump_objects, 4 bool dump_full, 5 bool dump_headers, 6 bool gen_functions_script;
+  
+static std::pair<Dumper::DumpArgs, IGameProfile *> UE_Games[]
+{
+    {{{}, {}, true, true, true, true},
+     new ApexProfile()},
+
+    {{{}, {}, true, true, true, true},
+     new DBDProfile()},
+
+    {{{}, {}, true, true, true, true},
+     new ArkProfile()},
+
+    {{{}, {}, true, true, true, true},
+     new PUBGMProfile()},
+
+    {{{}, {}, true, true, true, true},
+     new PESProfile()},
+
+    {{{}, {}, true, true, true, true},
+     new DistyleProfile()},
+};
+
+void *dump_thread(void *);
+
+__attribute__((constructor)) static void onLoad()
+{
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    NSLog(@"======= I'm Loaded ========");
+    pthread_t pthread;
+    pthread_create(&pthread, nullptr, dump_thread, nullptr);
+  });
+}
 
 void *dump_thread(void *)
 {
@@ -60,41 +95,25 @@ void *dump_thread(void *)
   {
     NSLog(@"Failed to create folders.\nError: %@", error);
     showError([NSString stringWithFormat:@"Failed to create folders.\nError: %@", error]);
-    return NULL;
+    return nullptr;
   }
-
-  // arguments
-  // 1 string dump_dir, 2 string dump_headers_dir
-  // 3 bool dump_objects, 4 bool dump_full, 5 bool dump_headers, 6 bool gen_functions_script;
-  Dumper::DumpArgs dumperArgs = {
-      dumpPath.UTF8String, headersdumpPath.UTF8String,
-      true, true, true, true};
 
   SCLAlertView *waitingAlert = nil;
   showWaiting(@"Dumping...", &waitingAlert);
 
   Dumper::DumpStatus dumpStatus = Dumper::UE_DS_NONE;
-  switch (Hash(appID.UTF8String, appID.length))
+
+  for(auto &it: UE_Games)
   {
-  case HASH("com.ea.ios.apexlegendsmobilefps"):
-    dumpStatus = Dumper::Dump(&dumperArgs, &apexProfile);
-    break;
-
-  case HASH("com.bhvr.deadbydaylight"):
-    dumpStatus = Dumper::Dump(&dumperArgs, &dbdProfile);
-    break;
-
-  case HASH("com.studiowildcard.wardrumstudios.ark"):
-    dumpStatus = Dumper::Dump(&dumperArgs, &arkProfile);
-    break;
-
-  case HASH("com.tencent.ig"):
-    dumpStatus = Dumper::Dump(&dumperArgs, &pubgmProfile);
-    break;
-
-  default:
-    break;
+    if(strcmp(appID.UTF8String, it.second->GetAppID().c_str()) == 0)
+    {
+      it.first.dump_dir = dumpPath.UTF8String; 
+      it.first.dump_headers_dir = headersdumpPath.UTF8String;
+      dumpStatus = Dumper::Dump(&it.first, it.second);
+      break;
+    }
   }
+
 
   NSString *zipPath = [NSString stringWithFormat:@"%@.zip", dumpPath];
   if ([fileManager fileExistsAtPath:dumpPath])
@@ -116,7 +135,7 @@ void *dump_thread(void *)
       std::string dumpStatusStr = Dumper::DumpStatusToStr(dumpStatus);
       showError([NSString stringWithFormat:@"Dump Failed: Err: {%s}.\nLogs at: \n%@", dumpStatusStr.c_str(), dumpPath]);
     }
-    return NULL;
+    return nullptr;
   }
 
   NSLog(@"Dump finished.");
@@ -146,15 +165,5 @@ void *dump_thread(void *)
     [okAlert showSuccess:vc title:@___ALERT_TITLE subTitle:[NSString stringWithFormat:@"Dump at: \n%@", zipPath] closeButtonTitle:@"Ok" duration:0.0f];
   });
 
-  return NULL;
-}
-
-__attribute__((constructor)) static void onLoad()
-{
-  static dispatch_once_t once;
-  dispatch_once(&once, ^{
-    NSLog(@"======= I'm Loaded ========");
-    pthread_t pthread;
-    pthread_create(&pthread, NULL, dump_thread, NULL);
-  });
+  return nullptr;
 }

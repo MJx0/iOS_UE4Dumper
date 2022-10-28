@@ -2,38 +2,39 @@
 
 #include "GameProfile.hpp"
 
-// ARK
-// UE 4.17
+// Distyle
+// UE 4.23 / UE 4.24 ??
 
-class ArkProfile : public IGameProfile
+class DistyleProfile : public IGameProfile
 {
 public:
-    ArkProfile() = default;
+    DistyleProfile() = default;
 
     std::string GetAppID() const override
     {
-        return "com.studiowildcard.wardrumstudios.ark";
+        return "com.lilithgames.xgame.ios.global";
     }
 
     MemoryFileInfo GetExecutableInfo() const override
     {
-        return KittyMemory::getMemoryFileInfo("ShooterGame");
+        return KittyMemory::getMemoryFileInfo("XGame");
     }
 
     bool IsUsingFNamePool() const override
     {
-        return false;
+        return true;
     }
 
     uintptr_t GetGUObjectArrayPtr() const override
     {
         const mach_header *hdr = GetExecutableInfo().header;
 
-        const char *bytes = "\x80\xB9\x00\x00\x00\x00\x00\x00\x00\x91\x00\x00\x40\xF9\x00\x03\x80\x52";
-        const char *mask = "xx???????x??xx?xxx";
-        const int step = 2;
+        // FUObjectArray::FUObjectArray();
+        const char *hex = "E1 23 00 91 00 00 00 94 E0 23 00 91 00 00 00 94 08 7D 80 52";
+        const char *mask = "xxxx???xxxxx???xxxxx";
+        const int step = 0x18;
 
-        uintptr_t insn_address = KittyScanner::findBytesFirst(hdr, "__TEXT", bytes, mask);
+        uintptr_t insn_address = KittyScanner::findHexFirst(hdr, "__TEXT", hex, mask);
         if (insn_address == 0)
             return 0;
 
@@ -64,42 +65,44 @@ public:
     {
         const mach_header *hdr = GetExecutableInfo().header;
 
-        const char *bytes = "\x81\x80\x52\x00\x00\x00\x00\x00\x03\x00\xAA\x00\x81\x80\x52\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\x87\x52";
-        const char *mask = "xxx?????x?x?xxx?????????????xxx";
-        const int step = -0xD;
+        // FNameEntry const* FName::GetEntry(FNameEntryId id);
+        const char *hex = "F6 57 BD A9 F4 4F 01 A9 FD 7B 02 A9 FD 83 00 91 F3 03 00 AA 00 00 00 00 A8 02 00 39";
+        const char *mask = "xxxxxxxxxxxxxxxxxxxx????xx?x";
+        const int step = 0x1C;
 
-        uintptr_t insn_address = KittyScanner::findBytesFirst(hdr, "__TEXT", bytes, mask);
+        uintptr_t insn_address = KittyScanner::findHexFirst(hdr, "__TEXT", hex, mask);
         if (insn_address == 0)
             return 0;
 
         insn_address += step;
 
         int64 adrp_pc_rel = 0;
-        int32 ldr_imm12 = 0;
+        int32 add_imm12 = 0;
 
         const int page_size = 4096;
         const uintptr_t page_off = (insn_address & ~(page_size - 1));
 
         uint32 adrp_insn = vm_rpm_ptr<uint32>((void *)(insn_address));
-        uint32 ldr_insn = vm_rpm_ptr<uint32>((void *)(insn_address + 4));
-        if (adrp_insn == 0 || ldr_insn == 0)
+        uint32 add_insn = vm_rpm_ptr<uint32>((void *)(insn_address + 4));
+        if (adrp_insn == 0 || add_insn == 0)
             return 0;
 
         if (!KittyArm64::decode_adr_imm(adrp_insn, &adrp_pc_rel) || adrp_pc_rel == 0)
             return 0;
 
-        if (!KittyArm64::decode_ldrstr_uimm(ldr_insn, &ldr_imm12) || ldr_imm12 == 0)
+        add_imm12 = KittyArm64::decode_addsub_imm(add_insn);
+        if (add_imm12 == 0)
             return 0;
 
-        return vm_rpm_ptr<uintptr_t>((void *)(page_off + adrp_pc_rel + ldr_imm12));
+        return (page_off + adrp_pc_rel + add_imm12);
     }
 
     Offsets *GetOffsets() const override
     {
         struct
         {
-            uint16 Stride = 0;          // not needed in versions older than UE4.23
-            uint16 FNamePoolBlocks = 0; // not needed in versions older than UE4.23
+            uint16 Stride = 2;             // alignof(FNameEntry)
+            uint16 FNamePoolBlocks = 0xD0; // usually ios at 0xD0 and android at 0x40
             uint16 FNameMaxSize = 0xff;
             struct
             {
@@ -110,15 +113,15 @@ public:
                 uint16 Number = 4;
             } FName;
             struct
-            {
-                uint16 Name = 0x10;
+            { // not needed in UE4.23+
+                uint16 Name = 0;
             } FNameEntry;
             struct
-            { // not needed in versions older than UE4.23
-                uint16 Info = 0;
-                uint16 WideBit = 0;
-                uint16 LenBit = 0;
-                uint16 HeaderSize = 0;
+            {
+                uint16 Info = 0;       // Offset to Memory filled with info about type and size of string
+                uint16 WideBit = 0;    // Offset to bit which shows if string uses wide characters
+                uint16 LenBit = 6;     // Offset to bit which has lenght of string
+                uint16 HeaderSize = 2; // Size of FNameEntry header (offset where a string begins)
             } FNameEntry23;
             struct
             {
@@ -126,7 +129,7 @@ public:
             } FUObjectArray;
             struct
             {
-                uint16 NumElements = 0xC;
+                uint16 NumElements = 0x14;
             } TUObjectArray;
             struct
             {
@@ -142,10 +145,10 @@ public:
             } UField;
             struct
             {
-                uint16 SuperStruct = 0x30; // sizeof(UField)
-                uint16 Children = 0x38;    // UField*
+                uint16 SuperStruct = 0x40; // sizeof(UField) + 2 pointers?
+                uint16 Children = 0x48;    // UField*
                 uint16 ChildrenProps = 0;  // not needed in versions older than UE4.25
-                uint16 PropertiesSize = 0x40;
+                uint16 PropertiesSize = 0x50;
             } UStruct;
             struct
             {
@@ -153,8 +156,8 @@ public:
             } UEnum;
             struct
             {
-                uint16 EFunctionFlags = 0x88; // sizeof(UStruct)
-                uint16 NumParams = EFunctionFlags + 0x6;
+                uint16 EFunctionFlags = 0x98; // sizeof(UStruct)
+                uint16 NumParams = EFunctionFlags + 0x4;
                 uint16 ParamSize = NumParams + 0x2;
                 uint16 ReturnValueOffset = ParamSize + 0x2;
                 uint16 Func = EFunctionFlags + 0x28; // ue3-ue4, always +0x28 from flags location.
@@ -179,8 +182,8 @@ public:
                 uint16 ArrayDim = 0x30; // sizeof(UField)
                 uint16 ElementSize = 0x34;
                 uint16 PropertyFlags = 0x38;
-                uint16 Offset_Internal = 0x50;
-                uint16 Size = 0x78; // sizeof(FProperty)
+                uint16 Offset_Internal = 0x44;
+                uint16 Size = 0x70; // sizeof(FProperty)
             } UProperty;
         } static profile;
         static_assert(sizeof(profile) == sizeof(Offsets));
