@@ -27,26 +27,16 @@ namespace Dumper
 
 		void to_json(json &j, const IdaFunction &f)
 		{
-			if (f.Parent.empty() || f.Parent == "None" || f.Name.empty() || f.Name == "None")
+			if (f.Parent.empty() || f.Parent == "None" || f.Parent == "null")
 				return;
-			if (f.Parent == "null" || f.Name == "null")
+			if (f.Name.empty() || f.Name == "None" || f.Name == "null")
 				return;
 
-			std::string Name = f.Parent;
-			Name += "$$";
-			Name += f.Name;
+			std::string fname = ioutils::replace_specials(f.Parent, '_');
+			fname += "$$";
+			fname += ioutils::replace_specials(f.Name, '_');
 
-			char chars[] = " /\\:;*?\"\'`~<>|,.[]{}-+=()!@#%^&";
-			for (auto c : chars)
-			{
-				auto pos = Name.find(c);
-				if (pos != std::string::npos)
-				{
-					Name[pos] = '_';
-				}
-			}
-
-			j = json{{"Name", Name}, {"Address", f.Address - __pagezero_size}};
+			j = json{{"Name", fname}, {"Address", f.Address - __pagezero_size}};
 		}
 	};
 
@@ -190,9 +180,8 @@ namespace Dumper
 		int structs_saved = 0;
 		int enums_saved = 0;
 
-		std::string exe_name_str = exe_info.name;
-		exe_name_str = exe_name_str.substr(exe_name_str.find_last_of("/\\") + 1);
-
+		static bool processInternal_once = false;
+		
 		for (UE_UPackage package : packages)
 		{
 			package.Process();
@@ -203,18 +192,41 @@ namespace Dumper
 				structs_saved += package.Structures.size();
 				enums_saved += package.Enums.size();
 
-				if (package.Classes.size())
+				for (const auto &cls : package.Classes)
 				{
-					for (const auto &cls : package.Classes)
+					if (!cls.Functions.size())
+						continue;
+
+					for (const auto &func : cls.Functions)
 					{
-						if (!cls.Functions.size())
-							continue;
-						// get important only functions
-						if (cls.FullName.rfind("Class Engine.") != 0 && cls.FullName.find(exe_name_str) == std::string::npos)
-							continue;
-						for (const auto &func : cls.Functions)
+						// UObject::ProcessInternal for blueprint functions
+						if(!processInternal_once && (func.EFlags & FUNC_BlueprintEvent))
 						{
-							JsonGen::idaFunctions.push_back({cls.Name, func.Name, func.Func - Profile::BaseAddress});
+							JsonGen::idaFunctions.push_back({"UObject", "ProcessInternal", func.Func - Profile::BaseAddress});
+							processInternal_once = true;
+						}
+
+						if (func.EFlags & FUNC_Native)
+						{
+							std::string execFuncName = "exec";
+							execFuncName += func.Name;
+							JsonGen::idaFunctions.push_back({cls.Name, execFuncName, func.Func - Profile::BaseAddress});
+						}
+					}
+				}
+
+				for (const auto &st : package.Structures)
+				{
+					if (!st.Functions.size())
+						continue;
+
+					for (const auto &func : st.Functions)
+					{
+						if (func.EFlags & FUNC_Native)
+						{
+							std::string execFuncName = "exec";
+							execFuncName += func.Name;
+							JsonGen::idaFunctions.push_back({st.Name, execFuncName, func.Func - Profile::BaseAddress});
 						}
 					}
 				}

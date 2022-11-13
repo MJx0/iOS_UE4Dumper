@@ -260,6 +260,7 @@ public:
 	int16 GetParamSize() const;
 	int16 GetReturnValueOffset() const;
 
+	uint32 GetFunctionEFlags() const;
 	std::string GetFunctionFlags() const;
 	static UE_UClass StaticClass();
 };
@@ -709,6 +710,7 @@ private:
         std::string FullName;
         std::string CppName;
         std::string Params;
+		uint32 EFlags;
         std::string Flags;
         int8 NumParams = 0;
         int16 ParamSize = 0;

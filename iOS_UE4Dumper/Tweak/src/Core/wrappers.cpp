@@ -518,9 +518,14 @@ int16 UE_UFunction::GetReturnValueOffset() const
     return vm_rpm_ptr<int16>(object + Profile::offsets.UFunction.ReturnValueOffset);
 }
 
+uint32 UE_UFunction::GetFunctionEFlags() const
+{
+    return vm_rpm_ptr<uint32>(object + Profile::offsets.UFunction.EFunctionFlags);
+}
+
 std::string UE_UFunction::GetFunctionFlags() const
 {
-    auto flags = vm_rpm_ptr<uint32>(object + Profile::offsets.UFunction.EFunctionFlags);
+    auto flags = GetFunctionEFlags();
     std::string result;
     if (flags == FUNC_None)
     {
@@ -1390,6 +1395,7 @@ void UE_UPackage::GenerateFunction(UE_UFunction fn, Function *out)
 {
 	out->Name = fn.GetName();
 	out->FullName = fn.GetFullName();
+	out->EFlags = fn.GetFunctionEFlags();
 	out->Flags = fn.GetFunctionFlags();
 	out->NumParams = fn.GetNumParams();
 	out->ParamSize = fn.GetParamSize();
@@ -1725,16 +1731,8 @@ bool UE_UPackage::Save(const char *fulldump_dir, const char *dumpheaders_dir)
 		return false;
 	}
 
-	std::string packageName = GetObject().GetName();
-	char chars[] = "/\\:*?\"<>|";
-	for (auto c : chars)
-	{
-		auto pos = packageName.find(c);
-		if (pos != std::string::npos)
-		{
-			packageName[pos] = '_';
-		}
-	}
+    // make safe to use as a file name
+    std::string packageName = ioutils::replace_specials(GetObject().GetName(), '_');
 
 	File fulldump_file;
 

@@ -24,3 +24,9 @@ T vm_rpm_ptr(void *address)
 std::string vm_rpm_str(void *address, int max_len = 0xff);
 
 uint8_t *GetSegmentData(const void*, const char*, unsigned long*);
+
+namespace ioutils
+{
+    std::string remove_specials(std::string s);
+    std::string replace_specials(std::string s, char c);
+}

@@ -60,3 +60,43 @@ uint8_t *GetSegmentData(const void *hdr, const char *seg, unsigned long *sz)
 
     return getsegmentdata(header, seg, sz);
 }
+
+namespace ioutils
+{
+    std::string remove_specials(std::string s)
+    {
+        for (int i = 0; i < s.size(); i++)
+        {
+            if (!((s[i] < 'A' || s[i] > 'Z') && (s[i] < 'a' || s[i] > 'z')))
+                continue;
+
+            if (!(s[i] < '0' || s[i] > '9'))
+                continue;
+
+            if (s[i] == '_')
+                continue;
+
+            s.erase(s.begin() + i);
+            --i;
+        }
+        return s;
+    }
+
+    std::string replace_specials(std::string s, char c)
+    {
+        for (int i = 0; i < s.size(); i++)
+        {
+            if (!((s[i] < 'A' || s[i] > 'Z') && (s[i] < 'a' || s[i] > 'z')))
+                continue;
+
+            if (!(s[i] < '0' || s[i] > '9'))
+                continue;
+
+            if (s[i] == '_')
+                continue;
+
+            s[i] = c;
+        }
+        return s;
+    }
+}
