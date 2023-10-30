@@ -1,0 +1,16 @@
+.DS_Store
+
+.vscode/
+
+.theos/
+
+packages/
+
+rootless/
+rootful/
+
+libs/
+obj/
+
+*.o
+*.obj

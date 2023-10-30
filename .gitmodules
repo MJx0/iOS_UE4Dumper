@@ -1,0 +1,3 @@
+[submodule "deps/KittyMemory"]
+	path = deps/KittyMemory
+	url = https://github.com/MJx0/KittyMemory.git

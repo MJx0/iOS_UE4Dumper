@@ -1,0 +1,8 @@
+{ Filter = { Bundles = (
+    "com.netease.dbdena",
+    "com.studiowildcard.wardrumstudios.ark",
+    "com.tencent.ig",
+    "jp.konami.pesactionmobile",
+    "com.lilithgames.xgame.ios.global");
+  }; 
+}
