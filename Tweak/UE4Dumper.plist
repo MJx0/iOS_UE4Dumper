@@ -1,4 +1,5 @@
 { Filter = { Bundles = (
+    "com.farlightgames.farlight84.iosglobal",
     "com.netease.dbdena",
     "com.studiowildcard.wardrumstudios.ark",
     "com.tencent.ig",

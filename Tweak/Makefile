@@ -9,6 +9,7 @@ THEOS_PACKAGE_DIR = packages/rootful
 endif
 
 INSTALL_TARGET_PROCESSES = \
+SolarlandClient \
  DeadByDaylight \
   ShooterGame \
    ShadowTrackerExtra \

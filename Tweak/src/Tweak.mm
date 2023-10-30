@@ -19,6 +19,7 @@ DumpTransferUI *dumpTransferUI = nil;
 #define WAIT_TIME_SEC 15
 #define DUMP_FOLDER @"UE4Dumper"
 
+#include "Core/GameProfiles/Farlight.hpp"
 #include "Core/GameProfiles/DBD.hpp"
 #include "Core/GameProfiles/ARK.hpp"
 #include "Core/GameProfiles/PUBGM.hpp"
@@ -28,6 +29,7 @@ DumpTransferUI *dumpTransferUI = nil;
 
 static IGameProfile *UE_Games[] =
 {
+     new FarlightProfile(),
      new DBDProfile(),
      new ArkProfile(),
      new PUBGMProfile(),

@@ -15,7 +15,7 @@ project.
 
 ## Currently Supported Games
 * Dead by Daylight Mobile
-* Apex Legends Mobile
+* Farlight 84
 * PUBGM International
 * ARK Survival
 * eFootBall 2023 (PES Mobile)
