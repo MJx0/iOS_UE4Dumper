@@ -10,8 +10,6 @@
 
 #include <KittyInclude.hpp>
 
-using KittyMemory::MemoryFileInfo;
-
 class IGameProfile
 {
 public:
@@ -19,7 +17,7 @@ public:
 
     virtual MemoryFileInfo GetExecutableInfo() const = 0;
 
-    virtual std::string GetAppID() const = 0;
+    virtual std::vector<std::string> GetAppIDs() const = 0;
 
     virtual bool IsUsingFNamePool() const = 0;
 
@@ -28,5 +26,5 @@ public:
     // GNames / NamePoolData
     virtual uintptr_t GetNamesPtr() const = 0;
 
-    virtual Offsets *GetOffsets() const = 0;
+    virtual UE_Offsets *GetOffsets() const = 0;
 };

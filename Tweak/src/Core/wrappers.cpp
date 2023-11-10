@@ -15,15 +15,18 @@ namespace Profile
 
     TUObjectArray ObjObjects{};
 
-    Offsets offsets{};
+    UE_Offsets offsets{};
 }
 
-std::string GetNameByID(uint32 id)
+std::string GetNameByID(int32 id)
 {
+    if (id < 0)
+        return "";
+
     if (Profile::GNamesPtr == 0 && Profile::NamePoolDataPtr == 0)
         return "";
 
-    static std::map<uint32, std::string> namesCachedMap;
+    static std::unordered_map<int32, std::string> namesCachedMap;
     if (namesCachedMap.count(id) > 0)
         return namesCachedMap[id];
 
@@ -87,6 +90,7 @@ int32 TUObjectArray::GetMaxElements() const
 {
     if (Profile::ObjObjectsPtr == 0)
         return 0;
+
     return vm_rpm_ptr<int32>((void *)(Profile::ObjObjectsPtr + Profile::offsets.TUObjectArray.NumElements - sizeof(int32)));
 }
 
@@ -94,6 +98,7 @@ int32 TUObjectArray::GetNumElements() const
 {
     if (Profile::ObjObjectsPtr == 0)
         return 0;
+
     return vm_rpm_ptr<int32>((void *)(Profile::ObjObjectsPtr + Profile::offsets.TUObjectArray.NumElements));
 }
 
@@ -168,10 +173,17 @@ bool TUObjectArray::IsObject(UE_UObject address) const
 
 std::string UE_FName::GetName() const
 {
-    uint32 index = 0;
-    if (!vm_rpm_ptr(object, &index, sizeof(uint32))) return "null";
-    
+    if (!object)
+        return "";
+
+    int32 index = 0;
+    if (!vm_rpm_ptr(object, &index, sizeof(int32)) && index < 0)
+        return "";
+
     auto name = GetNameByID(index);
+    if (name.empty())
+        return "";
+
     int32 number = vm_rpm_ptr<int32>(object + Profile::offsets.FName.Number);
     if (number > 0)
     {
@@ -187,21 +199,33 @@ std::string UE_FName::GetName() const
 
 int32 UE_UObject::GetIndex() const
 {
+    if (!object)
+        return -1;
+
     return vm_rpm_ptr<int32>(object + Profile::offsets.UObject.InternalIndex);
-};
+}
 
 UE_UClass UE_UObject::GetClass() const
 {
+    if (!object)
+        return nullptr;
+
     return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.UObject.ClassPrivate);
 }
 
 UE_UObject UE_UObject::GetOuter() const
 {
+    if (!object)
+        return nullptr;
+
     return vm_rpm_ptr<UE_UObject>(object + Profile::offsets.UObject.OuterPrivate);
 }
 
 UE_UObject UE_UObject::GetPackageObject() const
 {
+    if (!object)
+        return nullptr;
+
     UE_UObject package(nullptr);
     for (auto outer = GetOuter(); outer; outer = outer.GetOuter())
     {
@@ -212,12 +236,18 @@ UE_UObject UE_UObject::GetPackageObject() const
 
 std::string UE_UObject::GetName() const
 {
+    if (!object)
+        return "";
+
     auto fname = UE_FName(object + Profile::offsets.UObject.NamePrivate);
     return fname.GetName();
 }
 
 std::string UE_UObject::GetFullName() const
 {
+    if (!object)
+        return "";
+
     std::string temp;
     for (auto outer = GetOuter(); outer; outer = outer.GetOuter())
     {
@@ -230,6 +260,9 @@ std::string UE_UObject::GetFullName() const
 
 std::string UE_UObject::GetCppName() const
 {
+    if (!object)
+        return "";
+
     std::string name;
     if (IsA<UE_UClass>())
     {
@@ -258,6 +291,9 @@ std::string UE_UObject::GetCppName() const
 
 bool UE_UObject::IsA(UE_UClass cmp) const
 {
+    if (!object)
+        return false;
+
     for (auto super = GetClass(); super; super = super.GetSuper().Cast<UE_UClass>())
     {
         if (super == cmp)
@@ -273,7 +309,7 @@ UE_UClass UE_UObject::StaticClass()
 {
     static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.Object"));
     return obj;
-};
+}
 
 UE_UClass UE_AActor::StaticClass()
 {
@@ -283,6 +319,9 @@ UE_UClass UE_AActor::StaticClass()
 
 UE_UField UE_UField::GetNext() const
 {
+    if (!object)
+        return nullptr;
+
     return vm_rpm_ptr<UE_UField>(object + Profile::offsets.UField.Next);
 }
 
@@ -290,7 +329,7 @@ UE_UClass UE_UField::StaticClass()
 {
     static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.Field"));
     return obj;
-};
+}
 
 std::string IUProperty::GetName() const
 {
@@ -352,19 +391,19 @@ std::pair<PropertyType, std::string> UE_UProperty::GetType() const
     if (IsA<UE_UDoubleProperty>())
     {
         return {PropertyType::DoubleProperty, Cast<UE_UDoubleProperty>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UFloatProperty>())
     {
         return {PropertyType::FloatProperty, Cast<UE_UFloatProperty>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UIntProperty>())
     {
         return {PropertyType::IntProperty, Cast<UE_UIntProperty>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UInt16Property>())
     {
         return {PropertyType::Int16Property, Cast<UE_UInt16Property>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UInt32Property>())
     {
         return {PropertyType::Int32Property, Cast<UE_UInt32Property>().GetTypeStr()};
@@ -372,15 +411,15 @@ std::pair<PropertyType, std::string> UE_UProperty::GetType() const
     if (IsA<UE_UInt64Property>())
     {
         return {PropertyType::Int64Property, Cast<UE_UInt64Property>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UInt8Property>())
     {
         return {PropertyType::Int8Property, Cast<UE_UInt8Property>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UUInt16Property>())
     {
         return {PropertyType::UInt16Property, Cast<UE_UUInt16Property>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UUInt32Property>())
     {
         return {PropertyType::UInt32Property, Cast<UE_UUInt32Property>().GetTypeStr()};
@@ -388,7 +427,7 @@ std::pair<PropertyType, std::string> UE_UProperty::GetType() const
     if (IsA<UE_UUInt64Property>())
     {
         return {PropertyType::UInt64Property, Cast<UE_UUInt64Property>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UTextProperty>())
     {
         return {PropertyType::TextProperty, Cast<UE_UTextProperty>().GetTypeStr()};
@@ -396,19 +435,19 @@ std::pair<PropertyType, std::string> UE_UProperty::GetType() const
     if (IsA<UE_UStrProperty>())
     {
         return {PropertyType::TextProperty, Cast<UE_UStrProperty>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UClassProperty>())
     {
         return {PropertyType::ClassProperty, Cast<UE_UClassProperty>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UStructProperty>())
     {
         return {PropertyType::StructProperty, Cast<UE_UStructProperty>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UNameProperty>())
     {
         return {PropertyType::NameProperty, Cast<UE_UNameProperty>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UBoolProperty>())
     {
         return {PropertyType::BoolProperty, Cast<UE_UBoolProperty>().GetTypeStr()};
@@ -416,47 +455,47 @@ std::pair<PropertyType, std::string> UE_UProperty::GetType() const
     if (IsA<UE_UByteProperty>())
     {
         return {PropertyType::ByteProperty, Cast<UE_UByteProperty>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UArrayProperty>())
     {
         return {PropertyType::ArrayProperty, Cast<UE_UArrayProperty>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UEnumProperty>())
     {
         return {PropertyType::EnumProperty, Cast<UE_UEnumProperty>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_USetProperty>())
     {
         return {PropertyType::SetProperty, Cast<UE_USetProperty>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UMapProperty>())
     {
         return {PropertyType::MapProperty, Cast<UE_UMapProperty>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UInterfaceProperty>())
     {
         return {PropertyType::InterfaceProperty, Cast<UE_UInterfaceProperty>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UMulticastDelegateProperty>())
     {
         return {PropertyType::MulticastDelegateProperty, Cast<UE_UMulticastDelegateProperty>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UWeakObjectProperty>())
     {
         return {PropertyType::WeakObjectProperty, Cast<UE_UWeakObjectProperty>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_ULazyObjectProperty>())
     {
         return {PropertyType::LazyObjectProperty, Cast<UE_ULazyObjectProperty>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UObjectProperty>())
     {
         return {PropertyType::ObjectProperty, Cast<UE_UObjectProperty>().GetTypeStr()};
-    };
+    }
     if (IsA<UE_UObjectPropertyBase>())
     {
         return {PropertyType::ObjectProperty, Cast<UE_UObjectPropertyBase>().GetTypeStr()};
-    };
+    }
     return {PropertyType::Unknown, GetClass().GetName()};
 }
 
@@ -475,9 +514,9 @@ UE_UStruct UE_UStruct::GetSuper() const
 
 UE_FField UE_UStruct::GetChildProperties() const
 {
-    if (Profile::offsets.UStruct.ChildrenProps > 0)
+    if (Profile::offsets.UStruct.ChildProperties > 0)
     {
-        return vm_rpm_ptr<UE_FField>(object + Profile::offsets.UStruct.ChildrenProps);
+        return vm_rpm_ptr<UE_FField>(object + Profile::offsets.UStruct.ChildProperties);
     }
     return {};
 }
@@ -490,17 +529,17 @@ UE_UField UE_UStruct::GetChildren() const
 int32 UE_UStruct::GetSize() const
 {
     return vm_rpm_ptr<int32>(object + Profile::offsets.UStruct.PropertiesSize);
-};
+}
 
 UE_UClass UE_UStruct::StaticClass()
 {
     static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.Struct"));
     return obj;
-};
+}
 
-uint64 UE_UFunction::GetFunc() const
+uintptr_t UE_UFunction::GetFunc() const
 {
-    return vm_rpm_ptr<uint64>(object + Profile::offsets.UFunction.Func);
+    return vm_rpm_ptr<uintptr_t>(object + Profile::offsets.UFunction.Func);
 }
 
 int8 UE_UFunction::GetNumParams() const
@@ -511,11 +550,6 @@ int8 UE_UFunction::GetNumParams() const
 int16 UE_UFunction::GetParamSize() const
 {
     return vm_rpm_ptr<int16>(object + Profile::offsets.UFunction.ParamSize);
-}
-
-int16 UE_UFunction::GetReturnValueOffset() const
-{
-    return vm_rpm_ptr<int16>(object + Profile::offsets.UFunction.ReturnValueOffset);
 }
 
 uint32 UE_UFunction::GetFunctionEFlags() const
@@ -671,13 +705,13 @@ UE_UClass UE_UScriptStruct::StaticClass()
 {
     static UE_UClass obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.ScriptStruct"));
     return obj;
-};
+}
 
 UE_UClass UE_UClass::StaticClass()
 {
     static UE_UClass obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.Class"));
     return obj;
-};
+}
 
 TArray UE_UEnum::GetNames() const
 {
@@ -799,7 +833,7 @@ std::string UE_UBoolProperty::GetTypeStr() const
     if (GetFieldMask() == 0xFF)
     {
         return "bool";
-    };
+    }
     return "char";
 }
 
@@ -899,7 +933,7 @@ UE_UClass UE_UStrProperty::StaticClass()
 
 UE_UClass UE_UEnumProperty::GetEnum() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.UProperty.Size + 8);
+    return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.UProperty.Size + sizeof(void *));
 }
 
 std::string UE_UEnumProperty::GetTypeStr() const
@@ -915,7 +949,7 @@ UE_UClass UE_UEnumProperty::StaticClass()
 
 UE_UClass UE_UClassProperty::GetMetaClass() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.UProperty.Size + 8);
+    return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.UProperty.Size + sizeof(void *));
 }
 
 std::string UE_UClassProperty::GetTypeStr() const
@@ -952,7 +986,7 @@ UE_UProperty UE_UMapProperty::GetKeyProp() const
 
 UE_UProperty UE_UMapProperty::GetValueProp() const
 {
-    return vm_rpm_ptr<UE_UProperty>(object + Profile::offsets.UProperty.Size + 8);
+    return vm_rpm_ptr<UE_UProperty>(object + Profile::offsets.UProperty.Size + sizeof(void *));
 }
 
 std::string UE_UMapProperty::GetTypeStr() const
@@ -1024,7 +1058,7 @@ std::string UE_FFieldClass::GetName() const
 UE_FField UE_FField::GetNext() const
 {
     return vm_rpm_ptr<UE_FField>(object + Profile::offsets.FField.Next);
-};
+}
 
 std::string UE_FField::GetName() const
 {
@@ -1311,6 +1345,21 @@ std::string UE_FByteProperty::GetTypeStr() const
     return "char";
 }
 
+uint8 UE_FBoolProperty::GetFieldSize() const
+{
+    return vm_rpm_ptr<uint8>(object + Profile::offsets.FProperty.Size);
+}
+
+uint8 UE_FBoolProperty::GetByteOffset() const
+{
+    return vm_rpm_ptr<uint8>(object + Profile::offsets.FProperty.Size + 1);
+}
+
+uint8 UE_FBoolProperty::GetByteMask() const
+{
+    return vm_rpm_ptr<uint8>(object + Profile::offsets.FProperty.Size + 2);
+}
+
 uint8 UE_FBoolProperty::GetFieldMask() const
 {
     return vm_rpm_ptr<uint8>(object + Profile::offsets.FProperty.Size + 3);
@@ -1321,13 +1370,13 @@ std::string UE_FBoolProperty::GetTypeStr() const
     if (GetFieldMask() == 0xFF)
     {
         return "bool";
-    };
+    }
     return "char";
 }
 
 UE_UClass UE_FEnumProperty::GetEnum() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.FProperty.Size + 8);
+    return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.FProperty.Size + sizeof(void *));
 }
 
 std::string UE_FEnumProperty::GetTypeStr() const
@@ -1337,7 +1386,7 @@ std::string UE_FEnumProperty::GetTypeStr() const
 
 UE_UClass UE_FClassProperty::GetMetaClass() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.FProperty.Size + 8);
+    return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.FProperty.Size + sizeof(void *));
 }
 
 std::string UE_FClassProperty::GetTypeStr() const
@@ -1362,7 +1411,7 @@ UE_FProperty UE_FMapProperty::GetKeyProp() const
 
 UE_FProperty UE_FMapProperty::GetValueProp() const
 {
-    return vm_rpm_ptr<UE_FProperty>(object + Profile::offsets.FProperty.Size + 8);
+    return vm_rpm_ptr<UE_FProperty>(object + Profile::offsets.FProperty.Size + sizeof(void *));
 }
 
 std::string UE_FMapProperty::GetTypeStr() const
@@ -1390,335 +1439,336 @@ std::string UE_FFieldPathProperty::GetTypeStr() const
     return "struct TFieldPath<F" + GetPropertyName().GetName() + ">";
 }
 
-
-void UE_UPackage::GenerateFunction(UE_UFunction fn, Function *out)
-{
-	out->Name = fn.GetName();
-	out->FullName = fn.GetFullName();
-	out->EFlags = fn.GetFunctionEFlags();
-	out->Flags = fn.GetFunctionFlags();
-	out->NumParams = fn.GetNumParams();
-	out->ParamSize = fn.GetParamSize();
-	out->ReturnValueOffset = fn.GetReturnValueOffset();
-	out->Func = fn.GetFunc();
-
-	auto generateParam = [&](IProperty *prop)
-	{
-		auto flags = prop->GetPropertyFlags();
-
-		// if property has 'ReturnParm' flag
-		if (flags & 0x400)
-		{
-			out->CppName = prop->GetType().second + " " + fn.GetName();
-		}
-		// if property has 'Parm' flag
-		else if (flags & 0x80)
-		{
-			if (prop->GetArrayDim() > 1)
-			{
-				out->Params += fmt::format("{}* {}, ", prop->GetType().second, prop->GetName());
-			}
-			else
-			{
-				if (flags & 0x100)
-				{
-					out->Params += fmt::format("{}& {}, ", prop->GetType().second, prop->GetName());
-				}
-				else
-				{
-					out->Params += fmt::format("{} {}, ", prop->GetType().second, prop->GetName());
-				}
-			}
-		}
-	};
-
-	for (auto prop = fn.GetChildProperties().Cast<UE_FProperty>(); prop; prop = prop.GetNext().Cast<UE_FProperty>())
-	{
-		auto propInterface = prop.GetInterface();
-		generateParam(&propInterface);
-	}
-	for (auto prop = fn.GetChildren().Cast<UE_UProperty>(); prop; prop = prop.GetNext().Cast<UE_UProperty>())
-	{
-		auto propInterface = prop.GetInterface();
-		generateParam(&propInterface);
-	}
-	if (out->Params.size())
-	{
-		out->Params.erase(out->Params.size() - 2);
-	}
-
-	if (out->CppName.size() == 0)
-	{
-		out->CppName = "void " + fn.GetName();
-	}
-}
-
-void UE_UPackage::GenerateStruct(UE_UStruct object, std::vector<Struct> &arr)
-{
-	Struct s;
-	s.Size = object.GetSize();
-	if (s.Size == 0)
-	{
-		return;
-	}
-	s.Inherited = 0;
-	s.Name = object.GetName();
-	s.FullName = object.GetFullName();
-	s.CppName = "struct " + object.GetCppName();
-
-	auto super = object.GetSuper();
-	if (super)
-	{
-		s.CppName += " : " + super.GetCppName();
-		s.Inherited = super.GetSize();
-	}
-
-	uint32 offset = s.Inherited;
-	uint8 bitOffset = 0;
-
-	auto generateMember = [&](IProperty *prop, Member *m)
-	{
-		auto arrDim = prop->GetArrayDim();
-		m->Size = prop->GetSize() * arrDim;
-		if (m->Size == 0)
-		{
-			return;
-		} // this shouldn't be zero
-
-		auto type = prop->GetType();
-		m->Type = type.second;
-		m->Name = prop->GetName();
-		m->Offset = prop->GetOffset();
-
-		if (m->Offset > offset)
-		{
-			UE_UPackage::FillPadding(object, s.Members, offset, bitOffset, m->Offset);
-		}
-		if (type.first == PropertyType::BoolProperty && *(uint32 *)type.second.data() != 'loob')
-		{
-			auto boolProp = prop;
-			auto mask = boolProp->GetFieldMask();
-			uint8 zeros = 0, ones = 0;
-			while (mask & ~1)
-			{
-				mask >>= 1;
-				zeros++;
-			}
-			while (mask & 1)
-			{
-				mask >>= 1;
-				ones++;
-			}
-			if (zeros > bitOffset)
-			{
-				UE_UPackage::GenerateBitPadding(s.Members, offset, bitOffset, zeros - bitOffset);
-				bitOffset = zeros;
-			}
-			m->Name += fmt::format(" : {}", ones);
-			bitOffset += ones;
-
-			if (bitOffset == 8)
-			{
-				offset++;
-				bitOffset = 0;
-			}
-		}
-		else
-		{
-			if (arrDim > 1)
-			{
-				m->Name += fmt::format("[{:#0x}]", arrDim);
-			}
-
-			offset += m->Size;
-		}
-	};
-
-	for (auto prop = object.GetChildProperties().Cast<UE_FProperty>(); prop; prop = prop.GetNext().Cast<UE_FProperty>())
-	{
-		Member m;
-		auto propInterface = prop.GetInterface();
-		generateMember(&propInterface, &m);
-		s.Members.push_back(m);
-	}
-
-	for (auto child = object.GetChildren(); child; child = child.GetNext())
-	{
-		if (child.IsA<UE_UFunction>())
-		{
-			auto fn = child.Cast<UE_UFunction>();
-			Function f;
-			GenerateFunction(fn, &f);
-			s.Functions.push_back(f);
-		}
-		else if (child.IsA<UE_UProperty>())
-		{
-			auto prop = child.Cast<UE_UProperty>();
-			Member m;
-			auto propInterface = prop.GetInterface();
-			generateMember(&propInterface, &m);
-			s.Members.push_back(m);
-		}
-	}
-
-	if (s.Size > offset)
-	{
-		UE_UPackage::FillPadding(object, s.Members, offset, bitOffset, s.Size);
-	}
-
-	arr.push_back(s);
-}
-
-void UE_UPackage::GenerateEnum(UE_UEnum object, std::vector<Enum> &arr)
-{
-	Enum e;
-	e.FullName = object.GetFullName();
-
-	auto names = object.GetNames();
-
-	uint64 max = 0;
-	uint64 nameSize = ((Profile::offsets.FName.Number + 4) + 7) & ~(7);
-	uint64 pairSize = nameSize + 8;
-
-	for (int32 i = 0; i < names.Count; i++)
-	{
-		auto pair = names.Data + i * pairSize;
-		auto name = UE_FName(pair);
-		auto str = name.GetName();
-		auto pos = str.find_last_of(':');
-		if (pos != std::string::npos)
-		{
-			str = str.substr(pos + 1);
-		}
-
-		auto value = vm_rpm_ptr<int64>(pair + nameSize);
-		if ((uint64)value > max)
-			max = value;
-
-		str.append(" = ").append(fmt::format("{}", value));
-		e.Members.push_back(str);
-	}
-
-	const char *type = nullptr;
-
-	// I didn't see int16 yet, so I assume the engine generates only int32 and uint8:
-	if (max > 256)
-	{
-		type = " : int32_t"; // I assume if enum has a negative value it is int32
-	}
-	else
-	{
-		type = " : uint8_t";
-	}
-
-	e.CppName = "enum class " + object.GetName() + type;
-
-	if (e.Members.size())
-	{
-		arr.push_back(e);
-	}
-}
-
 void UE_UPackage::GenerateBitPadding(std::vector<Member> &members, uint32 offset, uint8 bitOffset, uint8 size)
 {
-	Member padding;
-	padding.Type = "char";
-	padding.Name = fmt::format("pad_0x{:0X}_{} : {}", offset, bitOffset, size);
-	padding.Offset = offset;
-	padding.Size = 1;
-	members.push_back(padding);
+    Member padding;
+    padding.Type = "char";
+    padding.Name = fmt::format("pad_0x{:0X}_{} : {}", offset, bitOffset, size);
+    padding.Offset = offset;
+    padding.Size = 1;
+    members.push_back(padding);
 }
 
 void UE_UPackage::GeneratePadding(std::vector<Member> &members, uint32 offset, uint32 size)
 {
-	Member padding;
-	padding.Type = "char";
-	padding.Name = fmt::format("pad_0x{:0X}[{:#0x}]", offset, size);
-	padding.Offset = offset;
-	padding.Size = size;
-	members.push_back(padding);
+    Member padding;
+    padding.Type = "char";
+    padding.Name = fmt::format("pad_0x{:0X}[{:#0x}]", offset, size);
+    padding.Offset = offset;
+    padding.Size = size;
+    members.push_back(padding);
 }
 
-void UE_UPackage::FillPadding(UE_UStruct, std::vector<Member> &members, uint32 &offset, uint8 &bitOffset, uint32 end)
+void UE_UPackage::FillPadding(UE_UStruct object, std::vector<Member> &members, uint32 &offset, uint8 &bitOffset, uint32 end)
 {
-	if (bitOffset && bitOffset < 8)
-	{
-		UE_UPackage::GenerateBitPadding(members, offset, bitOffset, 8 - bitOffset);
-		bitOffset = 0;
-		offset++;
-	}
+    (void)object;
 
-	if (offset != end)
-	{
-		GeneratePadding(members, offset, end - offset);
-		offset = end;
-	}
+    if (bitOffset && bitOffset < 8)
+    {
+        UE_UPackage::GenerateBitPadding(members, offset, bitOffset, 8 - bitOffset);
+        bitOffset = 0;
+        offset++;
+    }
+
+    if (offset != end)
+    {
+        GeneratePadding(members, offset, end - offset);
+        offset = end;
+    }
+}
+
+void UE_UPackage::GenerateFunction(UE_UFunction fn, Function *out)
+{
+    out->Name = fn.GetName();
+    out->FullName = fn.GetFullName();
+    out->EFlags = fn.GetFunctionEFlags();
+    out->Flags = fn.GetFunctionFlags();
+    out->NumParams = fn.GetNumParams();
+    out->ParamSize = fn.GetParamSize();
+    out->Func = fn.GetFunc();
+
+    auto generateParam = [&](IProperty *prop)
+    {
+        auto flags = prop->GetPropertyFlags();
+
+        // if property has 'ReturnParm' flag
+        if (flags & 0x400)
+        {
+            out->CppName = prop->GetType().second + " " + fn.GetName();
+        }
+        // if property has 'Parm' flag
+        else if (flags & 0x80)
+        {
+            if (prop->GetArrayDim() > 1)
+            {
+                out->Params += fmt::format("{}* {}, ", prop->GetType().second, prop->GetName());
+            }
+            else
+            {
+                if (flags & 0x100)
+                {
+                    out->Params += fmt::format("{}& {}, ", prop->GetType().second, prop->GetName());
+                }
+                else
+                {
+                    out->Params += fmt::format("{} {}, ", prop->GetType().second, prop->GetName());
+                }
+            }
+        }
+    };
+
+    for (auto prop = fn.GetChildProperties().Cast<UE_FProperty>(); prop; prop = prop.GetNext().Cast<UE_FProperty>())
+    {
+        auto propInterface = prop.GetInterface();
+        generateParam(&propInterface);
+    }
+    for (auto prop = fn.GetChildren().Cast<UE_UProperty>(); prop; prop = prop.GetNext().Cast<UE_UProperty>())
+    {
+        auto propInterface = prop.GetInterface();
+        generateParam(&propInterface);
+    }
+    if (out->Params.size())
+    {
+        out->Params.erase(out->Params.size() - 2);
+    }
+
+    if (out->CppName.size() == 0)
+    {
+        out->CppName = "void " + fn.GetName();
+    }
+}
+
+void UE_UPackage::GenerateStruct(UE_UStruct object, std::vector<Struct> &arr)
+{
+    Struct s;
+    s.Size = object.GetSize();
+    if (s.Size == 0)
+    {
+        return;
+    }
+    s.Inherited = 0;
+    s.Name = object.GetName();
+    s.FullName = object.GetFullName();
+    s.CppName = "struct " + object.GetCppName();
+
+    auto super = object.GetSuper();
+    if (super)
+    {
+        s.CppName += " : " + super.GetCppName();
+        s.Inherited = super.GetSize();
+    }
+
+    uint32 offset = s.Inherited;
+    uint8 bitOffset = 0;
+
+    auto generateMember = [&](IProperty *prop, Member *m)
+    {
+        auto arrDim = prop->GetArrayDim();
+        m->Size = prop->GetSize() * arrDim;
+        if (m->Size == 0)
+        {
+            return;
+        } // this shouldn't be zero
+
+        auto type = prop->GetType();
+        m->Type = type.second;
+        m->Name = prop->GetName();
+        m->Offset = prop->GetOffset();
+
+        if (m->Offset > offset)
+        {
+            UE_UPackage::FillPadding(object, s.Members, offset, bitOffset, m->Offset);
+        }
+        if (type.first == PropertyType::BoolProperty && *(uint32 *)type.second.data() != 'loob')
+        {
+            auto boolProp = prop;
+            auto mask = boolProp->GetFieldMask();
+            uint8 zeros = 0, ones = 0;
+            while (mask & ~1)
+            {
+                mask >>= 1;
+                zeros++;
+            }
+            while (mask & 1)
+            {
+                mask >>= 1;
+                ones++;
+            }
+            if (zeros > bitOffset)
+            {
+                UE_UPackage::GenerateBitPadding(s.Members, offset, bitOffset, zeros - bitOffset);
+                bitOffset = zeros;
+            }
+            m->Name += fmt::format(" : {}", ones);
+            bitOffset += ones;
+
+            if (bitOffset == 8)
+            {
+                offset++;
+                bitOffset = 0;
+            }
+        }
+        else
+        {
+            if (arrDim > 1)
+            {
+                m->Name += fmt::format("[{:#0x}]", arrDim);
+            }
+
+            offset += m->Size;
+        }
+    };
+
+    for (auto prop = object.GetChildProperties().Cast<UE_FProperty>(); prop; prop = prop.GetNext().Cast<UE_FProperty>())
+    {
+        Member m;
+        auto propInterface = prop.GetInterface();
+        generateMember(&propInterface, &m);
+        s.Members.push_back(m);
+    }
+
+    for (auto child = object.GetChildren(); child; child = child.GetNext())
+    {
+        if (child.IsA<UE_UFunction>())
+        {
+            auto fn = child.Cast<UE_UFunction>();
+            Function f;
+            GenerateFunction(fn, &f);
+            s.Functions.push_back(f);
+        }
+        else if (child.IsA<UE_UProperty>())
+        {
+            auto prop = child.Cast<UE_UProperty>();
+            Member m;
+            auto propInterface = prop.GetInterface();
+            generateMember(&propInterface, &m);
+            s.Members.push_back(m);
+        }
+    }
+
+    if (s.Size > offset)
+    {
+        UE_UPackage::FillPadding(object, s.Members, offset, bitOffset, s.Size);
+    }
+
+    arr.push_back(s);
+}
+
+void UE_UPackage::GenerateEnum(UE_UEnum object, std::vector<Enum> &arr)
+{
+    Enum e;
+    e.FullName = object.GetFullName();
+
+    auto names = object.GetNames();
+
+    uint64 max = 0;
+    uint64 nameSize = ((Profile::offsets.FName.Number + 4) + 7) & ~(7);
+    uint64 pairSize = nameSize + 8;
+
+    for (int32 i = 0; i < names.Count; i++)
+    {
+        auto pair = names.Data + i * pairSize;
+        auto name = UE_FName(pair);
+        auto str = name.GetName();
+        auto pos = str.find_last_of(':');
+        if (pos != std::string::npos)
+        {
+            str = str.substr(pos + 1);
+        }
+
+        auto value = vm_rpm_ptr<int64>(pair + nameSize);
+        if ((uint64)value > max)
+            max = value;
+
+        str.append(" = ").append(fmt::format("{}", value));
+        e.Members.push_back(str);
+    }
+
+    const char *type = nullptr;
+
+    // I didn't see int16 yet, so I assume the engine generates only int32 and uint8:
+    if (max > 256)
+    {
+        type = " : int32_t"; // I assume if enum has a negative value it is int32
+    }
+    else
+    {
+        type = " : uint8_t";
+    }
+
+    e.CppName = "enum class " + object.GetName() + type;
+
+    if (e.Members.size())
+    {
+        arr.push_back(e);
+    }
 }
 
 void UE_UPackage::SaveStruct(std::vector<Struct> &arr, FILE *file)
 {
-	for (auto &s : arr)
-	{
-		fmt::print(file, "// Object Name: {}\n// Size: {:#04x} // Inherited bytes: {:#04x}\n{} {{", s.FullName, s.Size, s.Inherited, s.CppName);
+    for (auto &s : arr)
+    {
+        fmt::print(file, "// Object: {}\n// Inherited Bytes: {:#0x} | Struct Size: {:#0x}\n{} {{", s.FullName, s.Inherited, s.Size, s.CppName);
 
-		if (s.Members.size())
-		{
-			fmt::print(file, "\n\t// Fields");
-			for (auto &m : s.Members)
-			{
-				fmt::print(file, "\n\t{} {}; // Offset: {:#04x} // Size: {:#04x}", m.Type, m.Name, m.Offset, m.Size);
-			}
-		}
-		if (s.Functions.size())
-		{
-			fmt::print(file, "{}\n\t// Functions", s.Members.size() ? "\n" : "");
-			for (auto &f : s.Functions)
-			{
-				fmt::print(file, "\n\n\t// Object Name: {}\n\t// Flags: [{}]\n\t{}({}); // Offset: {:#08x} // Return & Params: Num({}) Size({:#0x})", f.FullName, f.Flags, f.CppName, f.Params, f.Func - Profile::BaseAddress, f.NumParams, f.ParamSize);
-			}
-		}
-		fmt::print(file, "\n}};\n\n");
-	}
+        if (s.Members.size())
+        {
+            fmt::print(file, "\n\t// Fields");
+            for (auto &m : s.Members)
+            {
+                fmt::print(file, "\n\t{} {}; // Offset: {:#0x} | Size: {:#0x}", m.Type, m.Name, m.Offset, m.Size);
+            }
+        }
+        if (s.Functions.size())
+        {
+            fmt::print(file, "{}\n\t// Functions", s.Members.size() ? "\n" : "");
+            for (auto &f : s.Functions)
+            {
+                void *funcOffset = f.Func ? (void*)(f.Func - Profile::BaseAddress) : nullptr;
+                fmt::print(file, "\n\n\t// Object: {}\n\t// Flags: [{}]\n\t// Offset: {}\n\t// Return & Params: [ Num({}) Size({:#0x}) ]\n\t{}({});", f.FullName, f.Flags, funcOffset, f.NumParams, f.ParamSize, f.CppName, f.Params);
+            }
+        }
+        fmt::print(file, "\n}};\n\n");
+    }
 }
 
 void UE_UPackage::SaveEnum(std::vector<Enum> &arr, FILE *file)
 {
-	for (auto &e : arr)
-	{
-		fmt::print(file, "// Object Name: {}\n{} {{", e.FullName, e.CppName);
+    for (auto &e : arr)
+    {
+        fmt::print(file, "// Object: {}\n{} {{", e.FullName, e.CppName);
 
-		size_t lastIdx = e.Members.size() - 1;
-		for (size_t i = 0; i < lastIdx; i++)
-		{
-			auto &m = e.Members.at(i);
-			fmt::print(file, "\n\t{},", m);
-		}
+        size_t lastIdx = e.Members.size() - 1;
+        for (size_t i = 0; i < lastIdx; i++)
+        {
+            auto &m = e.Members.at(i);
+            fmt::print(file, "\n\t{},", m);
+        }
 
-		auto &m = e.Members.at(lastIdx);
-		fmt::print(file, "\n\t{}", m);
+        auto &m = e.Members.at(lastIdx);
+        fmt::print(file, "\n\t{}", m);
 
-		fmt::print(file, "\n}};\n\n");
-	}
+        fmt::print(file, "\n}};\n\n");
+    }
 }
 
 void UE_UPackage::Process()
 {
-	auto &objects = Package->second;
-	for (auto &object : objects)
-	{
-		if (object.IsA<UE_UClass>())
-		{
-			GenerateStruct(object.Cast<UE_UStruct>(), Classes);
-		}
-		else if (object.IsA<UE_UScriptStruct>())
-		{
-			GenerateStruct(object.Cast<UE_UStruct>(), Structures);
-		}
-		else if (object.IsA<UE_UEnum>())
-		{
-			GenerateEnum(object.Cast<UE_UEnum>(), Enums);
-		}
-	}
+    auto &objects = Package->second;
+    for (auto &object : objects)
+    {
+        if (object.IsA<UE_UClass>())
+        {
+            GenerateStruct(object.Cast<UE_UStruct>(), Classes);
+        }
+        else if (object.IsA<UE_UScriptStruct>())
+        {
+            GenerateStruct(object.Cast<UE_UStruct>(), Structures);
+        }
+        else if (object.IsA<UE_UEnum>())
+        {
+            GenerateEnum(object.Cast<UE_UEnum>(), Enums);
+        }
+    }
 }
 
 bool UE_UPackage::Save(const std::string &dir, const std::string &headers_dir)
@@ -1732,10 +1782,10 @@ bool UE_UPackage::Save(const std::string &dir, const std::string &headers_dir)
     // make safe to use as a file name
     std::string packageName = ioutils::replace_specials(GetObject().GetName(), '_');
 
-	File fulldump_file(dir + "/FullDump.hpp", "a");
+	File fulldump_file(dir + "/AIOHeader.hpp", "a");
 	if (fulldump_file.ok())
 	{
-		fmt::print(fulldump_file, "// {} Dumping: [ Enums: {} | Structs: {} | Classes: {} ]\n\n", packageName, Enums.size(), Structures.size(), Classes.size());
+		fmt::print(fulldump_file, "// Package {}: [ Enums: {} | Structs: {} | Classes: {} ]\n\n", packageName, Enums.size(), Structures.size(), Classes.size());
 	}
 
 	if (Enums.size())
@@ -1805,11 +1855,6 @@ bool UE_UPackage::Save(const std::string &dir, const std::string &headers_dir)
 			UE_UPackage::SaveStruct(Classes, fulldump_file);
 			fmt::print(fulldump_file, "\n\n");
 		}
-	}
-
-	if (fulldump_file.ok())
-	{
-		fmt::print(fulldump_file, "\n\n");
 	}
 
 	return true;

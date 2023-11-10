@@ -2,7 +2,6 @@
 
 #include <cstdio>
 #include <cstdint>
-#include <map>
 #include <unordered_map>
 #include <vector>
 
@@ -17,7 +16,7 @@
 
 #include "memory.hpp"
 
-std::string GetNameByID(uint32 id);
+std::string GetNameByID(int32 id);
 
 struct TArray
 {
@@ -219,34 +218,34 @@ enum EFunctionFlags : uint32
 	FUNC_RequiredAPI = 0x00000002,			  // Indicates this function is DLL exported/imported.
 	FUNC_BlueprintAuthorityOnly = 0x00000004, // Function will only run if the object has network authority
 	FUNC_BlueprintCosmetic = 0x00000008,	  // Function is cosmetic in nature and should not be invoked on dedicated servers
-										 // FUNC_				= 0x00000010,   // unused.
-										 // FUNC_				= 0x00000020,   // unused.
-	FUNC_Net = 0x00000040,				 // Function is network-replicated.
-	FUNC_NetReliable = 0x00000080,		 // Function should be sent reliably on the network.
-	FUNC_NetRequest = 0x00000100,		 // Function is sent to a net service
-	FUNC_Exec = 0x00000200,				 // Executable from command line.
-	FUNC_Native = 0x00000400,			 // Native function.
-	FUNC_Event = 0x00000800,			 // Event function.
-	FUNC_NetResponse = 0x00001000,		 // Function response from a net service
-	FUNC_Static = 0x00002000,			 // Static function.
-	FUNC_NetMulticast = 0x00004000,		 // Function is networked multicast Server -> All Clients
-	FUNC_UbergraphFunction = 0x00008000, // Function is used as the merge 'ubergraph' for a blueprint, only assigned when using the persistent 'ubergraph' frame
-	FUNC_MulticastDelegate = 0x00010000, // Function is a multi-cast delegate signature (also requires FUNC_Delegate to be set!)
-	FUNC_Public = 0x00020000,			 // Function is accessible in all classes (if overridden, parameters must remain unchanged).
-	FUNC_Private = 0x00040000,			 // Function is accessible only in the class it is defined in (cannot be overridden, but function name may be reused in subclasses.  IOW: if overridden, parameters don't need to match, and Super.Func() cannot be accessed since it's private.)
-	FUNC_Protected = 0x00080000,		 // Function is accessible only in the class it is defined in and subclasses (if overridden, parameters much remain unchanged).
-	FUNC_Delegate = 0x00100000,			 // Function is delegate signature (either single-cast or multi-cast, depending on whether FUNC_MulticastDelegate is set.)
-	FUNC_NetServer = 0x00200000,		 // Function is executed on servers (set by replication code if passes check)
-	FUNC_HasOutParms = 0x00400000,		 // function has out (pass by reference) parameters
-	FUNC_HasDefaults = 0x00800000,		 // function has structs that contain defaults
-	FUNC_NetClient = 0x01000000,		 // function is executed on clients
-	FUNC_DLLImport = 0x02000000,		 // function is imported from a DLL
-	FUNC_BlueprintCallable = 0x04000000, // function can be called from blueprint code
-	FUNC_BlueprintEvent = 0x08000000,	 // function can be overridden/implemented from a blueprint
-	FUNC_BlueprintPure = 0x10000000,	 // function can be called from blueprint code, and is also pure (produces no side effects). If you set this, you should set FUNC_BlueprintCallable as well.
-	FUNC_EditorOnly = 0x20000000,		 // function can only be called from an editor scrippt.
-	FUNC_Const = 0x40000000,			 // function can be called from blueprint code, and only reads state (never writes state)
-	FUNC_NetValidate = 0x80000000,		 // function must supply a _Validate implementation
+											  // FUNC_				= 0x00000010,   // unused.
+											  // FUNC_				= 0x00000020,   // unused.
+	FUNC_Net = 0x00000040,					  // Function is network-replicated.
+	FUNC_NetReliable = 0x00000080,			  // Function should be sent reliably on the network.
+	FUNC_NetRequest = 0x00000100,			  // Function is sent to a net service
+	FUNC_Exec = 0x00000200,					  // Executable from command line.
+	FUNC_Native = 0x00000400,				  // Native function.
+	FUNC_Event = 0x00000800,				  // Event function.
+	FUNC_NetResponse = 0x00001000,			  // Function response from a net service
+	FUNC_Static = 0x00002000,				  // Static function.
+	FUNC_NetMulticast = 0x00004000,			  // Function is networked multicast Server -> All Clients
+	FUNC_UbergraphFunction = 0x00008000,	  // Function is used as the merge 'ubergraph' for a blueprint, only assigned when using the persistent 'ubergraph' frame
+	FUNC_MulticastDelegate = 0x00010000,	  // Function is a multi-cast delegate signature (also requires FUNC_Delegate to be set!)
+	FUNC_Public = 0x00020000,				  // Function is accessible in all classes (if overridden, parameters must remain unchanged).
+	FUNC_Private = 0x00040000,				  // Function is accessible only in the class it is defined in (cannot be overridden, but function name may be reused in subclasses.  IOW: if overridden, parameters don't need to match, and Super.Func() cannot be accessed since it's private.)
+	FUNC_Protected = 0x00080000,			  // Function is accessible only in the class it is defined in and subclasses (if overridden, parameters much remain unchanged).
+	FUNC_Delegate = 0x00100000,				  // Function is delegate signature (either single-cast or multi-cast, depending on whether FUNC_MulticastDelegate is set.)
+	FUNC_NetServer = 0x00200000,			  // Function is executed on servers (set by replication code if passes check)
+	FUNC_HasOutParms = 0x00400000,			  // function has out (pass by reference) parameters
+	FUNC_HasDefaults = 0x00800000,			  // function has structs that contain defaults
+	FUNC_NetClient = 0x01000000,			  // function is executed on clients
+	FUNC_DLLImport = 0x02000000,			  // function is imported from a DLL
+	FUNC_BlueprintCallable = 0x04000000,	  // function can be called from blueprint code
+	FUNC_BlueprintEvent = 0x08000000,		  // function can be overridden/implemented from a blueprint
+	FUNC_BlueprintPure = 0x10000000,		  // function can be called from blueprint code, and is also pure (produces no side effects). If you set this, you should set FUNC_BlueprintCallable as well.
+	FUNC_EditorOnly = 0x20000000,			  // function can only be called from an editor scrippt.
+	FUNC_Const = 0x40000000,				  // function can be called from blueprint code, and only reads state (never writes state)
+	FUNC_NetValidate = 0x80000000,			  // function must supply a _Validate implementation
 	FUNC_AllFlags = 0xFFFFFFFF,
 };
 
@@ -254,11 +253,10 @@ class UE_UFunction : public UE_UStruct
 {
 public:
 	using UE_UStruct::UE_UStruct;
-	uint64 GetFunc() const;
+	uintptr_t GetFunc() const;
 
 	int8 GetNumParams() const;
 	int16 GetParamSize() const;
-	int16 GetReturnValueOffset() const;
 
 	uint32 GetFunctionEFlags() const;
 	std::string GetFunctionFlags() const;
@@ -603,6 +601,9 @@ class UE_FBoolProperty : public UE_FProperty
 {
 public:
 	using UE_FProperty::UE_FProperty;
+	uint8 GetFieldSize() const;
+	uint8 GetByteOffset() const;
+	uint8 GetByteMask() const;
 	uint8 GetFieldMask() const;
 	std::string GetTypeStr() const;
 };
@@ -674,7 +675,6 @@ class File
 public:
     FILE *file;
 
-public:
     File() : file(nullptr) {}
     File(const std::string &path, const char *mode)
     {
@@ -697,73 +697,71 @@ public:
 class UE_UPackage
 {
 private:
-    struct Member
-    {
-        std::string Type;
-        std::string Name;
-        uint32 Offset = 0;
-        uint32 Size = 0;
-    };
-    struct Function
-    {
-        std::string Name;
-        std::string FullName;
-        std::string CppName;
-        std::string Params;
-		uint32 EFlags;
-        std::string Flags;
-        int8 NumParams = 0;
-        int16 ParamSize = 0;
-        int16 ReturnValueOffset = 0;
-        uint64 Func = 0;
-    };
-    struct Struct
-    {
-        std::string Name;
-        std::string FullName;
-        std::string CppName;
-        uint32 Inherited = 0;
-        uint32 Size = 0;
-        std::vector<Member> Members;
-        std::vector<Function> Functions;
-    };
-    struct Enum
-    {
-        std::string FullName;
-        std::string CppName;
-        std::vector<std::string> Members;
-    };
+	struct Member
+	{
+		std::string Type;
+		std::string Name;
+		uint32 Offset = 0;
+		uint32 Size = 0;
+	};
+	struct Function
+	{
+		std::string Name;
+		std::string FullName;
+		std::string CppName;
+		std::string Params;
+		uint32 EFlags = 0;
+		std::string Flags;
+		int8 NumParams = 0;
+		int16 ParamSize = 0;
+		uintptr_t Func = 0;
+	};
+	struct Struct
+	{
+		std::string Name;
+		std::string FullName;
+		std::string CppName;
+		uint32 Inherited = 0;
+		uint32 Size = 0;
+		std::vector<Member> Members;
+		std::vector<Function> Functions;
+	};
+	struct Enum
+	{
+		std::string FullName;
+		std::string CppName;
+		std::vector<std::string> Members;
+	};
 
 private:
-    std::pair<uint8 *const, std::vector<UE_UObject> > *Package;
+	std::pair<uint8 *const, std::vector<UE_UObject>> *Package;
 
 public:
-    std::vector<Struct> Classes;
-    std::vector<Struct> Structures;
-    std::vector<Enum> Enums;
+	std::vector<Struct> Classes;
+	std::vector<Struct> Structures;
+	std::vector<Enum> Enums;
 
 private:
-    static void GenerateFunction(UE_UFunction fn, Function *out);
-    static void GenerateStruct(UE_UStruct object, std::vector<Struct> &arr);
-    static void GenerateEnum(UE_UEnum object, std::vector<Enum> &arr);
+	static void GenerateFunction(UE_UFunction fn, Function *out);
+	static void GenerateStruct(UE_UStruct object, std::vector<Struct> &arr);
+	static void GenerateEnum(UE_UEnum object, std::vector<Enum> &arr);
 
-    static void GenerateBitPadding(std::vector<Member> &members, uint32 offset, uint8 bitOffset, uint8 size);
-    static void GeneratePadding(std::vector<Member> &members, uint32 offset, uint32 size);
-    static void FillPadding(UE_UStruct object, std::vector<Member> &members, uint32 &offset, uint8 &bitOffset, uint32 end);
+	static void GenerateBitPadding(std::vector<Member> &members, uint32 offset, uint8 bitOffset, uint8 size);
+	static void GeneratePadding(std::vector<Member> &members, uint32 offset, uint32 size);
+	static void FillPadding(UE_UStruct object, std::vector<Member> &members, uint32 &offset, uint8 &bitOffset, uint32 end);
 
-    static void SaveStruct(std::vector<Struct> &arr, FILE *file);
-    static void SaveEnum(std::vector<Enum> &arr, FILE *file);
+	static void SaveStruct(std::vector<Struct> &arr, FILE *file);
+	static void SaveEnum(std::vector<Enum> &arr, FILE *file);
 
 public:
-    UE_UPackage(std::pair<uint8 *const, std::vector<UE_UObject> > &package) : Package(&package){};
-    void Process();
+	UE_UPackage(std::pair<uint8 *const, std::vector<UE_UObject>> &package) : Package(&package){};
+	void Process();
 	bool Save(const std::string &dir, const std::string &headers_dir);
-    UE_UObject GetObject() const;
+	UE_UObject GetObject() const;
 };
 
 namespace Profile
 {
-
 	extern uintptr_t BaseAddress;
 
 	extern bool isUsingFNamePool;
@@ -774,6 +772,5 @@ namespace Profile
 
 	extern TUObjectArray ObjObjects;
 
-	extern Offsets offsets;
-
+	extern UE_Offsets offsets;
 };

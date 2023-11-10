@@ -2,15 +2,11 @@
 
 #include <types.h>
 
-struct Offsets
+struct UE_Offsets
 {
     uint16 Stride = 0;
     uint16 FNamePoolBlocks = 0;
     uint16 FNameMaxSize = 0;
-    struct
-    {
-        uint16 Size = 0;
-    } FUObjectItem;
     struct
     {
         uint16 Number = 0;
@@ -36,6 +32,10 @@ struct Offsets
     } TUObjectArray;
     struct
     {
+        uint16 Size = 0;
+    } FUObjectItem;
+    struct
+    {
         uint16 ObjectFlags = 0;
         uint16 InternalIndex = 0;
         uint16 ClassPrivate = 0;
@@ -50,7 +50,7 @@ struct Offsets
     {
         uint16 SuperStruct = 0;
         uint16 Children = 0;
-        uint16 ChildrenProps = 0;
+        uint16 ChildProperties = 0;
         uint16 PropertiesSize = 0;
     } UStruct;
     struct
@@ -62,7 +62,6 @@ struct Offsets
         uint16 EFunctionFlags = 0;
         uint16 NumParams = 0;
         uint16 ParamSize = 0;
-        uint16 ReturnValueOffset = 0;
         uint16 Func = 0;
     } UFunction;
     struct

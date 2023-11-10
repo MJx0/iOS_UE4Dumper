@@ -1,6 +1,6 @@
 TARGET := iphone:clang:latest:10.0
 
-#THEOS_PACKAGE_SCHEME = rootless
+THEOS_PACKAGE_SCHEME = rootless
 
 ifeq ($(THEOS_PACKAGE_SCHEME),rootless)
 THEOS_PACKAGE_DIR = packages/rootless
@@ -10,11 +10,11 @@ endif
 
 INSTALL_TARGET_PROCESSES = \
 SolarlandClient \
- DeadByDaylight \
-  ShooterGame \
-   ShadowTrackerExtra \
-    PESmobile \
-     XGame
+DeadByDaylight \
+ShooterGame \
+ShadowTrackerExtra \
+PESmobile \
+XGame
 
 #THEOS_DEVICE_IP =
 ARCHS = arm64 arm64e

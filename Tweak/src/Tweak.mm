@@ -65,13 +65,12 @@ void dump_thread()
   NSString *dumpFolderName = [NSString stringWithFormat:@"%@_%@", [appName stringByReplacingOccurrencesOfString:@" " withString:@""], DUMP_FOLDER];
 
   NSString *dumpPath = [NSString stringWithFormat:@"%@/%@", docDir, dumpFolderName];
-  NSString *headersdumpPath = [NSString stringWithFormat:@"%@/%@/%@", docDir, dumpFolderName, @"headers"];
+  NSString *headersdumpPath = [NSString stringWithFormat:@"%@/%@", dumpPath, @"Headers"];
 
   NSLog(@"UE4DUMP_PATH: %@", dumpPath);
 
   NSFileManager *fileManager = [NSFileManager defaultManager];
 
-  [fileManager removeItemAtPath:headersdumpPath error:nil];
   [fileManager removeItemAtPath:dumpPath error:nil];
   [fileManager removeItemAtPath:[NSString stringWithFormat:@"%@.zip", dumpPath] error:nil];
 
@@ -89,21 +88,23 @@ void dump_thread()
 
   Dumper::DumpStatus dumpStatus = Dumper::UE_DS_NONE;
 
-  for(auto &it: UE_Games)
+  for (auto &it : UE_Games)
   {
-    if(strcmp(appID.UTF8String, it->GetAppID().c_str()) == 0)
-    {
-      dumpStatus = Dumper::Dump(dumpPath.UTF8String, headersdumpPath.UTF8String, it);
-      break;
-    }
+      for (auto &pkg : it->GetAppIDs())
+      {
+          if (pkg.compare(appID.UTF8String) == 0)
+          {
+              dumpStatus = Dumper::Dump(dumpPath.UTF8String, headersdumpPath.UTF8String, it);
+              goto done;
+          }
+      }
   }
-
+done:
 
   NSString *zipPath = [NSString stringWithFormat:@"%@.zip", dumpPath];
   if ([fileManager fileExistsAtPath:dumpPath])
   {
     [SSZipArchive createZipFileAtPath:zipPath withContentsOfDirectory:dumpPath];
-    [fileManager removeItemAtPath:headersdumpPath error:nil];
     [fileManager removeItemAtPath:dumpPath error:nil];
   }
 

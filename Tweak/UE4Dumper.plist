@@ -3,7 +3,12 @@
     "com.netease.dbdena",
     "com.studiowildcard.wardrumstudios.ark",
     "com.tencent.ig",
+    "com.rekoo.pubgm",
+    "com.pubg.imobile",
+    "com.pubg.krmobile",
+    "com.vng.pubgmobile",
     "jp.konami.pesactionmobile",
-    "com.lilithgames.xgame.ios.global");
+    "com.lilithgames.xgame.ios.global"
+    );
   }; 
 }

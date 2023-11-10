@@ -10,9 +10,9 @@ class DBDProfile : public IGameProfile
 public:
     DBDProfile() = default;
 
-    std::string GetAppID() const override
+    std::vector<std::string> GetAppIDs() const override
     {
-        return "com.netease.dbdena";
+        return { "com.netease.dbdena" };
     }
 
     MemoryFileInfo GetExecutableInfo() const override
@@ -57,8 +57,6 @@ public:
             return 0;
 
         add_imm12 = KittyArm64::decode_addsub_imm(add_insn);
-        if (add_imm12 == 0)
-            return 0;
 
         return (page_off + adrp_pc_rel + add_imm12);
     }
@@ -95,23 +93,17 @@ public:
             return 0;
 
         add_imm12 = KittyArm64::decode_addsub_imm(add_insn);
-        if (add_imm12 == 0)
-            return 0;
-
+        
         return (page_off + adrp_pc_rel + add_imm12);
     }
 
-    Offsets *GetOffsets() const override
+    UE_Offsets *GetOffsets() const override
     {
         struct
         {
             uint16 Stride = 4;
             uint16 FNamePoolBlocks = 0xD0; // usually ios at 0xD0 and android at 0x40
             uint16 FNameMaxSize = 0xff;
-            struct
-            {
-                uint16 Size = 0x18;
-            } FUObjectItem;
             struct
             {
                 uint16 Number = 8;
@@ -137,6 +129,10 @@ public:
             } TUObjectArray;
             struct
             {
+                uint16 Size = 0x18;
+            } FUObjectItem;
+            struct
+            {
                 uint16 ObjectFlags = 0x8;
                 uint16 InternalIndex = 0xC;
                 uint16 ClassPrivate = 0x10;
@@ -151,7 +147,7 @@ public:
             {
                 uint16 SuperStruct = 0x48;   // sizeof(UField) + 2 pointers?
                 uint16 Children = 0x50;      // UField*
-                uint16 ChildrenProps = 0x58; // FField*
+                uint16 ChildProperties = 0x58; // FField*
                 uint16 PropertiesSize = 0x60;
             } UStruct;
             struct
@@ -163,7 +159,6 @@ public:
                 uint16 EFunctionFlags = 0xB8; // sizeof(UStruct)
                 uint16 NumParams = EFunctionFlags + 0x4;
                 uint16 ParamSize = NumParams + 0x2;
-                uint16 ReturnValueOffset = ParamSize + 0x2;
                 uint16 Func = EFunctionFlags + 0x28; // ue3-ue4, always +0x28 from flags location
             } UFunction;
             struct
@@ -190,8 +185,8 @@ public:
                 uint16 Size = 0;
             } UProperty;
         } static profile;
-        static_assert(sizeof(profile) == sizeof(Offsets));
+        static_assert(sizeof(profile) == sizeof(UE_Offsets));
 
-        return (Offsets *)&profile;
+        return (UE_Offsets *)&profile;
     }
 };

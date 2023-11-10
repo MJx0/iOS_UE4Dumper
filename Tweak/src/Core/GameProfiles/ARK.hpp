@@ -10,9 +10,9 @@ class ArkProfile : public IGameProfile
 public:
     ArkProfile() = default;
 
-    std::string GetAppID() const override
+    std::vector<std::string> GetAppIDs() const override
     {
-        return "com.studiowildcard.wardrumstudios.ark";
+        return  { "com.studiowildcard.wardrumstudios.ark" };
     }
 
     MemoryFileInfo GetExecutableInfo() const override
@@ -56,8 +56,6 @@ public:
             return 0;
 
         add_imm12 = KittyArm64::decode_addsub_imm(add_insn);
-        if (add_imm12 == 0)
-            return 0;
 
         return (page_off + adrp_pc_rel + add_imm12);
     }
@@ -92,23 +90,19 @@ public:
         if (!KittyArm64::decode_adr_imm(adrp_insn, &adrp_pc_rel) || adrp_pc_rel == 0)
             return 0;
 
-        if (!KittyArm64::decode_ldrstr_uimm(ldr_insn, &ldr_imm12) || ldr_imm12 == 0)
+        if (!KittyArm64::decode_ldrstr_uimm(ldr_insn, &ldr_imm12))
             return 0;
 
         return vm_rpm_ptr<uintptr_t>((void *)(page_off + adrp_pc_rel + ldr_imm12));
     }
 
-    Offsets *GetOffsets() const override
+    UE_Offsets *GetOffsets() const override
     {
         struct
         {
             uint16 Stride = 0;          // not needed in versions older than UE4.23
             uint16 FNamePoolBlocks = 0; // not needed in versions older than UE4.23
             uint16 FNameMaxSize = 0xff;
-            struct
-            {
-                uint16 Size = 0x18;
-            } FUObjectItem;
             struct
             {
                 uint16 Number = 4;
@@ -134,6 +128,10 @@ public:
             } TUObjectArray;
             struct
             {
+                uint16 Size = 0x18;
+            } FUObjectItem;
+            struct
+            {
                 uint16 ObjectFlags = 0x8;
                 uint16 InternalIndex = 0xC;
                 uint16 ClassPrivate = 0x10;
@@ -148,7 +146,7 @@ public:
             {
                 uint16 SuperStruct = 0x30; // sizeof(UField)
                 uint16 Children = 0x38;    // UField*
-                uint16 ChildrenProps = 0;  // not needed in versions older than UE4.25
+                uint16 ChildProperties = 0;  // not needed in versions older than UE4.25
                 uint16 PropertiesSize = 0x40;
             } UStruct;
             struct
@@ -160,7 +158,6 @@ public:
                 uint16 EFunctionFlags = 0x88; // sizeof(UStruct)
                 uint16 NumParams = EFunctionFlags + 0x6;
                 uint16 ParamSize = NumParams + 0x2;
-                uint16 ReturnValueOffset = ParamSize + 0x2;
                 uint16 Func = EFunctionFlags + 0x28; // ue3-ue4, always +0x28 from flags location.
             } UFunction;
             struct
@@ -187,8 +184,8 @@ public:
                 uint16 Size = 0x78; // sizeof(FProperty)
             } UProperty;
         } static profile;
-        static_assert(sizeof(profile) == sizeof(Offsets));
+        static_assert(sizeof(profile) == sizeof(UE_Offsets));
 
-        return (Offsets *)&profile;
+        return (UE_Offsets *)&profile;
     }
 };

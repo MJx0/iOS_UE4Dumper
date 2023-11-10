@@ -28,6 +28,8 @@ namespace Dumper
 				return;
 			if (f.Name.empty() || f.Name == "None" || f.Name == "null")
 				return;
+			if (f.Address == 0)
+				return;
 
 			std::string fname = ioutils::replace_specials(f.Parent, '_');
 			fname += "$$";
@@ -45,11 +47,11 @@ namespace Dumper
 
 		GetSegmentData(gameProfile->GetExecutableInfo().header, "__PAGEZERO", &JsonGen::__pagezero_size);
 
-		Offsets *p_offsets = gameProfile->GetOffsets();
+		UE_Offsets *p_offsets = gameProfile->GetOffsets();
 		if (!p_offsets)
 			return UE_DS_ERROR_INIT_OFFSETS;
 
-		Profile::offsets = *(Offsets *)p_offsets;
+		Profile::offsets = *(UE_Offsets *)p_offsets;
 
 		Profile::isUsingFNamePool = gameProfile->IsUsingFNamePool();
 
@@ -111,9 +113,12 @@ namespace Dumper
 		{
 			fmt::print(logfile, "FNamePool: {:#08x}\n", Profile::NamePoolDataPtr);
 		}
-		fmt::print(logfile, "Test Dumping First 10 Name Enteries\n");
-		for (int i = 0; i < 10; i++)
+		fmt::print(logfile, "Test Dumping First 5 Name Enteries\n");
+		for (int i = 0; i < 5; i++)
 		{
+			std::string name = GetNameByID(i);
+			if (name.empty()) continue;
+
 			fmt::print(logfile, "GetNameByID({}): {}\n", i, GetNameByID(i));
 		}
 		fmt::print(logfile, "==========================\n");
@@ -123,14 +128,14 @@ namespace Dumper
 		fmt::print(logfile, "ObjObjects Max: {}\n", Profile::ObjObjects.GetMaxElements());
 		fmt::print(logfile, "==========================\n");
 
-		File objfile(dir + "/objects_dump.txt", "w");
+		File objfile(dir + "/ObjectsDump.txt", "w");
 		if (!objfile.ok())
 			return UE_DS_ERROR_IO_OPERATION;
 
 		std::function<void(UE_UObject)> objdump_callback;
 		objdump_callback = [&objfile](UE_UObject object)
 		{
-			fmt::print(objfile, "{}\n", object.GetName());
+			fmt::print(objfile, "[{:010}]: {}\n", object.GetIndex(), object.GetFullName());
 		};
 
 		std::unordered_map<uint8 *, std::vector<UE_UObject>> packages;
@@ -181,13 +186,13 @@ namespace Dumper
 					for (const auto &func : cls.Functions)
 					{
 						// UObject::ProcessInternal for blueprint functions
-						if(!processInternal_once && (func.EFlags & FUNC_BlueprintEvent))
+						if(!processInternal_once && (func.EFlags & FUNC_BlueprintEvent) && func.Func)
 						{
 							JsonGen::idaFunctions.push_back({"UObject", "ProcessInternal", func.Func - Profile::BaseAddress});
 							processInternal_once = true;
 						}
 
-						if (func.EFlags & FUNC_Native)
+						if ((func.EFlags & FUNC_Native) && func.Func)
 						{
 							std::string execFuncName = "exec";
 							execFuncName += func.Name;
@@ -203,7 +208,7 @@ namespace Dumper
 
 					for (const auto &func : st.Functions)
 					{
-						if (func.EFlags & FUNC_Native)
+						if ((func.EFlags & FUNC_Native) && func.Func)
 						{
 							std::string execFuncName = "exec";
 							execFuncName += func.Name;
