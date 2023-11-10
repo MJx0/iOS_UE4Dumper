@@ -8,7 +8,9 @@
     "com.pubg.krmobile",
     "com.vng.pubgmobile",
     "jp.konami.pesactionmobile",
-    "com.lilithgames.xgame.ios.global"
+    "com.lilithgames.xgame.ios.global",
+    "com.wb.MK.Brawler2015",
+    "com.xd.TLglobal"
     );
   }; 
 }

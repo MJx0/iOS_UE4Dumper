@@ -14,7 +14,9 @@ DeadByDaylight \
 ShooterGame \
 ShadowTrackerExtra \
 PESmobile \
-XGame
+XGame \
+MKMobile \
+UE_game
 
 #THEOS_DEVICE_IP =
 ARCHS = arm64 arm64e

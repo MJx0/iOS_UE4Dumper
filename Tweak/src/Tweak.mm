@@ -25,6 +25,8 @@ DumpTransferUI *dumpTransferUI = nil;
 #include "Core/GameProfiles/PUBGM.hpp"
 #include "Core/GameProfiles/PES.hpp"
 #include "Core/GameProfiles/Distyle.hpp"
+#include "Core/GameProfiles/Torchlight.hpp"
+#include "Core/GameProfiles/MortalKombat.hpp"
 
 
 static IGameProfile *UE_Games[] =
@@ -35,6 +37,8 @@ static IGameProfile *UE_Games[] =
      new PUBGMProfile(),
      new PESProfile(),
      new DistyleProfile(),
+     new TorchlightProfile(),
+     new MortalKombatProfile(),
 };
 
 void dump_thread();
