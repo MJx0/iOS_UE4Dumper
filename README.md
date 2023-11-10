@@ -20,6 +20,8 @@ project.
 * ARK Survival
 * eFootBall 2023 (PES Mobile)
 * Distyle
+* Mortal Kombat
+* Torchlight: Infinite
 
 ## Usage
 Download the pre-compiled deb or compile it by yourself.
@@ -32,16 +34,16 @@ After this a third pop-up will appear showing you the optional function to direc
 
 ## Output-Files
 
-##### headers_dump
+##### Headers
 * C++ headers that you can use in your source, however the headers might not compile directly without a change
 
-##### FullDump.hpp
-* An all-in-one dump file
+##### AIOHeader.hpp
+* An all-in-one dump file header
 
 ##### logs.txt
 * Logfile containing dump process logs
 
-##### objects_dump.txt
+##### ObjectsDump.txt
 * ObjObjects dump
 
 ##### script.json
