@@ -29,8 +29,9 @@ public:
     {
         const mach_header *hdr = GetExecutableInfo().header;
 
-        std::string ida_pattern = "08 ? 43 B9 96 ? ? ? ? ? ? 91 1F 05 00 71";
-        const int step = 4;
+        // https://github.com/MJx0/iOS_UE4Dumper/issues/23#issue-1988107342
+        std::string ida_pattern = "2A 7D ? 13 ? ? ? 12 08 01 09 4B 29 ? ? ? 1F 20 03 D5 29 ? ? ? 29 ? ? F8";
+        const int step = 0xC;
         
         unsigned long seg_size;
         uintptr_t seg_start = uintptr_t(GetSegmentData(hdr, "__TEXT", &seg_size));
@@ -42,22 +43,23 @@ public:
         insn_address += step;
 
         int64 adrp_pc_rel = 0;
-        int32 add_imm12 = 0;
+        int32 ldr_imm12 = 0;
 
         const int page_size = 4096;
         const uintptr_t page_off = (insn_address & ~(page_size - 1));
 
         uint32 adrp_insn = vm_rpm_ptr<uint32>((void *)(insn_address));
-        uint32 add_insn = vm_rpm_ptr<uint32>((void *)(insn_address + 4));
-        if (adrp_insn == 0 || add_insn == 0)
+        uint32 ldr_insn = vm_rpm_ptr<uint32>((void *)(insn_address + 8));
+        if (adrp_insn == 0 || ldr_insn == 0)
             return 0;
 
         if (!KittyArm64::decode_adr_imm(adrp_insn, &adrp_pc_rel) || adrp_pc_rel == 0)
             return 0;
 
-        add_imm12 = KittyArm64::decode_addsub_imm(add_insn);
+        if (!KittyArm64::decode_ldrstr_uimm(ldr_insn, &ldr_imm12))
+            return 0;
 
-        return (page_off + adrp_pc_rel + add_imm12);
+        return (page_off + adrp_pc_rel + ldr_imm12) - GetOffsets()->FUObjectArray.ObjObjects;
     }
 
     uintptr_t GetNamesPtr() const override
