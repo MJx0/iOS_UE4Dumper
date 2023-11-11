@@ -70,16 +70,22 @@ void dump_thread()
 
   NSString *dumpPath = [NSString stringWithFormat:@"%@/%@", docDir, dumpFolderName];
   NSString *headersdumpPath = [NSString stringWithFormat:@"%@/%@", dumpPath, @"Headers"];
+  NSString *zipdumpPath = [NSString stringWithFormat:@"%@.zip", dumpPath];
 
   NSLog(@"UE4DUMP_PATH: %@", dumpPath);
 
   NSFileManager *fileManager = [NSFileManager defaultManager];
 
-  [fileManager removeItemAtPath:dumpPath error:nil];
-  [fileManager removeItemAtPath:[NSString stringWithFormat:@"%@.zip", dumpPath] error:nil];
+  if ([fileManager fileExistsAtPath:dumpPath])
+  {
+    [fileManager removeItemAtPath:dumpPath error:nil];
+  }
+  if ([fileManager fileExistsAtPath:zipdumpPath])
+  {
+    [fileManager removeItemAtPath:zipdumpPath error:nil];
+  }
 
   NSError *error = nil;
-
   if (![fileManager createDirectoryAtPath:headersdumpPath withIntermediateDirectories:YES attributes:nil error:&error])
   {
     NSLog(@"Failed to create folders.\nError: %@", error);
@@ -105,10 +111,9 @@ void dump_thread()
   }
 done:
 
-  NSString *zipPath = [NSString stringWithFormat:@"%@.zip", dumpPath];
   if ([fileManager fileExistsAtPath:dumpPath])
   {
-    [SSZipArchive createZipFileAtPath:zipPath withContentsOfDirectory:dumpPath];
+    [SSZipArchive createZipFileAtPath:zipdumpPath withContentsOfDirectory:dumpPath];
     [fileManager removeItemAtPath:dumpPath error:nil];
   }
 
@@ -146,12 +151,12 @@ done:
 
       [transferAlert addButton:@"Yes"
                    actionBlock:^(void) {
-                     dumpTransferUI = [[DumpTransferUI alloc] initWithFileAtPath:zipPath];
+                     dumpTransferUI = [[DumpTransferUI alloc] initWithFileAtPath:zipdumpPath];
                      [dumpTransferUI show];
                    }];
       [transferAlert showEdit:vc title:@___ALERT_TITLE subTitle:@"Do you want to transfer dump over IP?" closeButtonTitle:@"No" duration:0.0f];
     }];
 
-    [okAlert showSuccess:vc title:@___ALERT_TITLE subTitle:[NSString stringWithFormat:@"Dump at: \n%@", zipPath] closeButtonTitle:@"Ok" duration:0.0f];
+    [okAlert showSuccess:vc title:@___ALERT_TITLE subTitle:[NSString stringWithFormat:@"Dump at: \n%@", zipdumpPath] closeButtonTitle:@"Ok" duration:0.0f];
   });
 }
