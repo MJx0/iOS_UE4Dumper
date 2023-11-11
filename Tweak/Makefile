@@ -45,7 +45,7 @@ $(wildcard includes/SCLAlertView/*.m) \
 $(wildcard includes/GCDAsyncSocket/*.m) \
 $(wildcard includes/SSZipArchive/SSZipArchive.m) $(wildcard includes/SSZipArchive/minizip/*.c)
 
-$(TWEAK_NAME)_CFLAGS = -fobjc-arc $(ZIP_ARCHIVE_DEFINES)
+$(TWEAK_NAME)_CFLAGS = -fobjc-arc $(ZIP_ARCHIVE_DEFINES) -Wno-deprecated-declarations
 
 $(TWEAK_NAME)_CCFLAGS = -std=c++17 -Iincludes -I$(KITTYMEMORY_PATH) -O2 -DkNO_KEYSTONE -DkNO_SUBSTRATE
 ifeq ($(RPM_USE_MEMCPY), 1)
