@@ -16,7 +16,8 @@ ShadowTrackerExtra \
 PESmobile \
 XGame \
 MKMobile \
-UE_game
+UE_game \
+UAGame
 
 #THEOS_DEVICE_IP =
 ARCHS = arm64 arm64e

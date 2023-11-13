@@ -27,6 +27,7 @@ DumpTransferUI *dumpTransferUI = nil;
 #include "Core/GameProfiles/Distyle.hpp"
 #include "Core/GameProfiles/Torchlight.hpp"
 #include "Core/GameProfiles/MortalKombat.hpp"
+#include "Core/GameProfiles/ArenaBreakout.hpp"
 
 
 static IGameProfile *UE_Games[] =
@@ -39,6 +40,7 @@ static IGameProfile *UE_Games[] =
      new DistyleProfile(),
      new TorchlightProfile(),
      new MortalKombatProfile(),
+     new ArenaBreakoutProfile()
 };
 
 void dump_thread();
@@ -136,15 +138,13 @@ done:
   NSLog(@"Dump finished.");
 
   dispatch_async(dispatch_get_main_queue(), ^{
-    UIViewController *vc = [[[[UIApplication sharedApplication] delegate] window] rootViewController];
-
-    SCLAlertView *okAlert = [[SCLAlertView alloc] init];
+    SCLAlertView *okAlert = [[SCLAlertView alloc] initWithNewWindow];
     okAlert.shouldDismissOnTapOutside = YES;
     okAlert.showAnimationType = SCLAlertViewShowAnimationSlideInFromTop;
     okAlert.hideAnimationType = SCLAlertViewHideAnimationSlideOutToBottom;
 
     [okAlert alertIsDismissed:^{
-      SCLAlertView *transferAlert = [[SCLAlertView alloc] init];
+      SCLAlertView *transferAlert = [[SCLAlertView alloc] initWithNewWindow];
       transferAlert.shouldDismissOnTapOutside = YES;
       transferAlert.showAnimationType = SCLAlertViewShowAnimationSlideInFromTop;
       transferAlert.hideAnimationType = SCLAlertViewHideAnimationSlideOutToBottom;
@@ -154,9 +154,9 @@ done:
                      dumpTransferUI = [[DumpTransferUI alloc] initWithFileAtPath:zipdumpPath];
                      [dumpTransferUI show];
                    }];
-      [transferAlert showEdit:vc title:@___ALERT_TITLE subTitle:@"Do you want to transfer dump over IP?" closeButtonTitle:@"No" duration:0.0f];
+      [transferAlert showEdit:@___ALERT_TITLE subTitle:@"Do you want to transfer dump over IP?" closeButtonTitle:@"No" duration:0.0f];
     }];
 
-    [okAlert showSuccess:vc title:@___ALERT_TITLE subTitle:[NSString stringWithFormat:@"Dump at: \n%@", zipdumpPath] closeButtonTitle:@"Ok" duration:0.0f];
+    [okAlert showSuccess:@___ALERT_TITLE subTitle:[NSString stringWithFormat:@"Dump at: \n%@", zipdumpPath] closeButtonTitle:@"Ok" duration:0.0f];
   });
 }
