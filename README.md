@@ -22,6 +22,7 @@ project.
 * Distyle
 * Mortal Kombat
 * Torchlight: Infinite
+* Arena Breakout
 
 ## Usage
 Download the pre-compiled deb or compile it by yourself.
