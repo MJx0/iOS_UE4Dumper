@@ -33,15 +33,12 @@ public:
 
     uintptr_t GetGUObjectArrayPtr() const override
     {
-        const mach_header *hdr = GetExecutableInfo().header;
-
         std::string ida_pattern = "80 B9 ? ? ? ? ? ? ? 91 ? ? 40 F9 ? 03 80 52";
         const int step = 2;
         
-        unsigned long seg_size;
-        uintptr_t seg_start = uintptr_t(GetSegmentData(hdr, "__TEXT", &seg_size));
-
-        uintptr_t insn_address = KittyScanner::findIdaPatternFirst(seg_start, seg_start+seg_size, ida_pattern);
+        auto text_seg = GetExecutableInfo().getSegment("__TEXT");
+        
+        uintptr_t insn_address = KittyScanner::findIdaPatternFirst(text_seg.start, text_seg.end, ida_pattern);
         if (insn_address == 0)
             return 0;
 
@@ -68,15 +65,12 @@ public:
 
     uintptr_t GetNamesPtr() const override
     {
-        const mach_header *hdr = GetExecutableInfo().header;
-
         std::string ida_pattern = "E0 ? 00 91 ? 09 00 94 ? ? 02";
         const int step = 8;
         
-        unsigned long seg_size;
-        uintptr_t seg_start = uintptr_t(GetSegmentData(hdr, "__TEXT", &seg_size));
-
-        uintptr_t insn_address = KittyScanner::findIdaPatternFirst(seg_start, seg_start+seg_size, ida_pattern);
+        auto text_seg = GetExecutableInfo().getSegment("__TEXT");
+        
+        uintptr_t insn_address = KittyScanner::findIdaPatternFirst(text_seg.start, text_seg.end, ida_pattern);
         if (insn_address == 0)
             return 0;
             

@@ -27,16 +27,13 @@ public:
 
     uintptr_t GetGUObjectArrayPtr() const override
     {
-        const mach_header *hdr = GetExecutableInfo().header;
-
         // https://github.com/MJx0/iOS_UE4Dumper/issues/23#issue-1988107342
         std::string ida_pattern = "2A 7D ? 13 ? ? ? 12 08 01 09 4B 29 ? ? ? 1F 20 03 D5 29 ? ? ? 29 ? ? F8";
         const int step = 0xC;
         
-        unsigned long seg_size;
-        uintptr_t seg_start = uintptr_t(GetSegmentData(hdr, "__TEXT", &seg_size));
-
-        uintptr_t insn_address = KittyScanner::findIdaPatternFirst(seg_start, seg_start+seg_size, ida_pattern);
+        auto text_seg = GetExecutableInfo().getSegment("__TEXT");
+        
+        uintptr_t insn_address = KittyScanner::findIdaPatternFirst(text_seg.start, text_seg.end, ida_pattern);
         if (insn_address == 0)
             return 0;
 
@@ -64,15 +61,12 @@ public:
 
     uintptr_t GetNamesPtr() const override
     {
-        const mach_header *hdr = GetExecutableInfo().header;
-
         std::string ida_pattern = "C8 00 00 37 ? ? ? ? ? ? ? 91 ? ? FF 97";
         const int step = 4;
         
-        unsigned long seg_size;
-        uintptr_t seg_start = uintptr_t(GetSegmentData(hdr, "__TEXT", &seg_size));
-
-        uintptr_t insn_address = KittyScanner::findIdaPatternFirst(seg_start, seg_start+seg_size, ida_pattern);
+        auto text_seg = GetExecutableInfo().getSegment("__TEXT");
+        
+        uintptr_t insn_address = KittyScanner::findIdaPatternFirst(text_seg.start, text_seg.end, ida_pattern);
         if (insn_address == 0)
             return 0;
 
