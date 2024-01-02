@@ -17,7 +17,8 @@ PESmobile \
 XGame \
 MKMobile \
 UE_game \
-UAGame
+UAGame \
+ProjectVic
 
 #THEOS_DEVICE_IP =
 ARCHS = arm64 arm64e

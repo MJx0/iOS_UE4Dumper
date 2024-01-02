@@ -28,6 +28,7 @@ DumpTransferUI *dumpTransferUI = nil;
 #include "Core/GameProfiles/Torchlight.hpp"
 #include "Core/GameProfiles/MortalKombat.hpp"
 #include "Core/GameProfiles/ArenaBreakout.hpp"
+#include "Core/GameProfiles/BlackClover.hpp"
 
 
 static IGameProfile *UE_Games[] =
@@ -40,7 +41,8 @@ static IGameProfile *UE_Games[] =
      new DistyleProfile(),
      new TorchlightProfile(),
      new MortalKombatProfile(),
-     new ArenaBreakoutProfile()
+     new ArenaBreakoutProfile(),
+     new BlackCloverProfile()
 };
 
 void dump_thread();

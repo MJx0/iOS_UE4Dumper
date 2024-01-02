@@ -7,11 +7,13 @@
     "com.pubg.imobile",
     "com.pubg.krmobile",
     "com.vng.pubgmobile",
+    "com.tencent.tmgp.pubgmhd",
     "jp.konami.pesactionmobile",
     "com.lilithgames.xgame.ios.global",
     "com.wb.MK.Brawler2015",
     "com.xd.TLglobal",
-    "com.proximabeta.mf.uamo"
+    "com.proximabeta.mf.uamo",
+    "com.garena.game.bc"
     );
   }; 
 }

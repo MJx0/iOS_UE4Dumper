@@ -107,11 +107,11 @@ namespace Dumper
 
 		if (!Profile::isUsingFNamePool)
 		{
-			fmt::print(logfile, "GNames: {:#08x}\n", Profile::GNamesPtr);
+			fmt::print(logfile, "GNames: [Base + {:#08x}] = {:#08x}\n", Profile::GNamesPtr-Profile::BaseAddress, Profile::GNamesPtr);
 		}
 		else
 		{
-			fmt::print(logfile, "FNamePool: {:#08x}\n", Profile::NamePoolDataPtr);
+			fmt::print(logfile, "FNamePool: [Base + {:#08x}] = {:#08x}\n", Profile::NamePoolDataPtr-Profile::BaseAddress, Profile::NamePoolDataPtr);
 		}
 		fmt::print(logfile, "Test Dumping First 5 Name Enteries\n");
 		for (int i = 0; i < 5; i++)
@@ -123,7 +123,7 @@ namespace Dumper
 		}
 		fmt::print(logfile, "==========================\n");
 
-		fmt::print(logfile, "ObjObjects: {:#08x}\n", Profile::ObjObjectsPtr);
+		fmt::print(logfile, "ObjObjects: [Base + {:#08x}] = {:#08x}\n", Profile::ObjObjectsPtr-Profile::BaseAddress, Profile::ObjObjectsPtr);
 		fmt::print(logfile, "ObjObjects Num: {}\n", Profile::ObjObjects.GetNumElements());
 		fmt::print(logfile, "ObjObjects Max: {}\n", Profile::ObjObjects.GetMaxElements());
 		fmt::print(logfile, "==========================\n");
