@@ -23,6 +23,7 @@ project.
 * Mortal Kombat
 * Torchlight: Infinite
 * Arena Breakout
+* Black Clover
 
 ## Usage
 Download the pre-compiled deb or compile it by yourself.
