@@ -113,7 +113,7 @@ namespace Dumper
 		{
 			fmt::print(logfile, "FNamePool: [Base + {:#08x}] = {:#08x}\n", Profile::NamePoolDataPtr-Profile::BaseAddress, Profile::NamePoolDataPtr);
 		}
-		fmt::print(logfile, "Test Dumping First 5 Name Enteries\n");
+		fmt::print(logfile, "Test Dumping First 5 Name Entries\n");
 		for (int i = 0; i < 5; i++)
 		{
 			std::string name = GetNameByID(i);
