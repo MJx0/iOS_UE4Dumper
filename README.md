@@ -63,6 +63,14 @@ You can use AirDrop or [LocalSend](https://github.com/localsend/localsend) to tr
 Follow the prototype in Tweak/src/Core/GameProfiles<br/>
 You can also use the provided patterns to find GUObjectArray, GNames or NamePoolData.
 
+## Building
+
+```bash
+git clone --recursive https://github.com/MJx0/iOS_UEDumper
+cd iOS_UEDumper/Tweak
+make clean package
+```
+
 ## Credits & Thanks
 
 * [UE4Dumper-4.25](https://github.com/guttir14/UnrealDumper-4.25)
