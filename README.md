@@ -1,6 +1,6 @@
-# iOS Unreal Engine 4 Dumper / UE4 Dumper
+# iOS Unreal Engine Dumper / UE Dumper
 
-MobileSubstrate Tweak to dump Unreal Engine 4 games on iOS.
+MobileSubstrate Tweak to dump Unreal Engine games on iOS.
 
 The dumper is based on [UE4Dumper-4.25](https://github.com/guttir14/UnrealDumper-4.25)
 project.
