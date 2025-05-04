@@ -1,90 +1,100 @@
 #pragma once
 
-#include <types.h>
+#include <cstdint>
+#include <cstring>
+
+using NameByIndex_t = std::function<std::string(int)>;
+using ObjectByIndex_t = std::function<uint8_t*(int)>;
 
 struct UE_Offsets
 {
-    uint16 Stride = 0;
-    uint16 FNamePoolBlocks = 0;
-    uint16 FNameMaxSize = 0;
+    UE_Offsets()
+    {
+        memset(this, 0, sizeof(UE_Offsets));
+    }
+    
+    uint16_t Stride = 0;
+    uint16_t FNamePoolBlocks = 0;
+    uint16_t FNameMaxSize = 0;
     struct
     {
-        uint16 Number = 0;
+        uint16_t Number = 0;
     } FName;
     struct
     {
-        uint16 Name = 0;
+        uint16_t Name = 0;
     } FNameEntry;
     struct
     {
-        uint16 Info = 0;
-        uint16 WideBit = 0;
-        uint16 LenBit = 0;
-        uint16 HeaderSize = 0;
+        uint16_t Header = 0;
+        std::function<bool(int16_t)> GetIsWide = nullptr;
+        std::function<size_t(int16_t)> GetLength = nullptr;
     } FNameEntry23;
     struct
     {
-        uint16 ObjObjects = 0;
+        uint16_t ObjObjects = 0;
     } FUObjectArray;
     struct
     {
-        uint16 NumElements = 0;
+        uint16_t Objects = 0;
+        uint16_t NumElements = 0;
     } TUObjectArray;
     struct
     {
-        uint16 Size = 0;
+        uint16_t Object = 0;
+        uint16_t Size = 0;
     } FUObjectItem;
     struct
     {
-        uint16 ObjectFlags = 0;
-        uint16 InternalIndex = 0;
-        uint16 ClassPrivate = 0;
-        uint16 NamePrivate = 0;
-        uint16 OuterPrivate = 0;
+        uint16_t ObjectFlags = 0;
+        uint16_t InternalIndex = 0;
+        uint16_t ClassPrivate = 0;
+        uint16_t NamePrivate = 0;
+        uint16_t OuterPrivate = 0;
     } UObject;
     struct
     {
-        uint16 Next = 0;
+        uint16_t Next = 0;
     } UField;
     struct
     {
-        uint16 SuperStruct = 0;
-        uint16 Children = 0;
-        uint16 ChildProperties = 0;
-        uint16 PropertiesSize = 0;
+        uint16_t SuperStruct = 0;
+        uint16_t Children = 0;
+        uint16_t ChildProperties = 0;
+        uint16_t PropertiesSize = 0;
     } UStruct;
     struct
     {
-        uint16 Names = 0;
+        uint16_t Names = 0;
     } UEnum;
     struct
     {
-        uint16 EFunctionFlags = 0;
-        uint16 NumParams = 0;
-        uint16 ParamSize = 0;
-        uint16 Func = 0;
+        uint16_t EFunctionFlags = 0;
+        uint16_t NumParams = 0;
+        uint16_t ParamSize = 0;
+        uint16_t Func = 0;
     } UFunction;
     struct
     {
-        uint16 ClassPrivate = 0;
-        uint16 Next = 0;
-        uint16 NamePrivate = 0;
-        uint16 FlagsPrivate = 0;
+        uint16_t ClassPrivate = 0;
+        uint16_t Next = 0;
+        uint16_t NamePrivate = 0;
+        uint16_t FlagsPrivate = 0;
     } FField;
     struct
     {
-        uint16 ArrayDim = 0;
-        uint16 ElementSize = 0;
-        uint16 PropertyFlags = 0;
-        uint16 Offset_Internal = 0;
-        uint16 Size = 0;
+        uint16_t ArrayDim = 0;
+        uint16_t ElementSize = 0;
+        uint16_t PropertyFlags = 0;
+        uint16_t Offset_Internal = 0;
+        uint16_t Size = 0;
     } FProperty;
     struct
     {
-        uint16 ArrayDim = 0;
-        uint16 ElementSize = 0;
-        uint16 PropertyFlags = 0;
-        uint16 Offset_Internal = 0;
-        uint16 Size = 0;
+        uint16_t ArrayDim = 0;
+        uint16_t ElementSize = 0;
+        uint16_t PropertyFlags = 0;
+        uint16_t Offset_Internal = 0;
+        uint16_t Size = 0;
     } UProperty;
 };

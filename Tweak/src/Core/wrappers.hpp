@@ -4,139 +4,217 @@
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
-
 #include <string>
 #include <utility>
 #include <functional>
-
-#include <types.h>
-#include <hash/hash.h>
+#include <algorithm>
 
 #include "Offsets.hpp"
 
-#include "memory.hpp"
+class UE_UObjectArray;
 
-std::string GetNameByID(int32 id);
+namespace UEVars
+{
+    extern uintptr_t BaseAddress;
+    extern unsigned long pagezero_size;
+
+    extern bool isUsingFNamePool;
+    extern bool isUsingOutlineNumberName;
+
+    extern uintptr_t NamePoolDataPtr;
+    extern uintptr_t GNamesPtr;
+    extern uintptr_t ObjObjectsPtr;
+
+    extern UE_UObjectArray ObjObjects;
+
+    extern UE_Offsets offsets;
+    
+    // custom method in case game has different implementation to get names
+    extern NameByIndex_t customNameByIndex;
+    
+    // custom method in case game has different implementation to get objects
+    extern ObjectByIndex_t customObjectByIndex;
+};
+
+template<typename T>
+constexpr uint64_t GetMaxOfType()
+{
+    return (1ull << (sizeof(T) * 0x8ull)) - 1;
+}
+
+std::string UE_GetNameByID(int32_t id);
 
 struct TArray
 {
-	uint8 *Data;
-	int32 Count;
-	int32 Max;
-};
-
-struct TUObjectArray
-{
-	uint8 **Objects;
-
-	int32 GetMaxElements() const;
-	int32 GetNumElements() const;
-
-	uint8 *GetObjectPtr(int32 id) const;
-	class UE_UObject FindObject(const std::string &name) const;
-
-	void ForEachObject(std::function<void(uint8 *)> callback) const;
-	void ForEachObjectOfClass(const class UE_UClass cmp, std::function<bool(uint8 *)> callback) const;
-
-	bool IsObject(UE_UObject address) const;
+	uint8_t *Data;
+	int32_t Count;
+	int32_t Max;
 };
 
 class UE_FName
 {
 protected:
-	uint8 *object;
+    uint8_t *object;
 
 public:
-	UE_FName(uint8 *object) : object(object) {}
-	UE_FName() : object(nullptr) {}
-	std::string GetName() const;
+    UE_FName(uint8_t *object) : object(object) {}
+    UE_FName() : object(nullptr) {}
+    int GetNumber() const;
+    std::string GetName() const;
+};
+
+enum class PropertyType
+{
+    Unknown,
+    StructProperty,
+    ObjectProperty,
+    SoftObjectProperty,
+    FloatProperty,
+    ByteProperty,
+    BoolProperty,
+    IntProperty,
+    Int8Property,
+    Int16Property,
+    Int32Property,
+    Int64Property,
+    UInt16Property,
+    UInt32Property,
+    UInt64Property,
+    NameProperty,
+    DelegateProperty,
+    SetProperty,
+    ArrayProperty,
+    WeakObjectProperty,
+    LazyObjectProperty,
+    StrProperty,
+    TextProperty,
+    MulticastSparseDelegateProperty,
+    EnumProperty,
+    DoubleProperty,
+    MulticastDelegateProperty,
+    ClassProperty,
+    MulticastInlineDelegateProperty,
+    MapProperty,
+    InterfaceProperty,
+    FieldPathProperty,
+    SoftClassProperty
+};
+
+enum class EInternalObjectFlags : int32_t
+{
+    None = 0,
+    ReachableInCluster = 1 << 23,
+    ClusterRoot = 1 << 24,
+    Native = 1 << 25,
+    Async = 1 << 26,
+    AsyncLoading = 1 << 27,
+    Unreachable = 1 << 28,
+    PendingKill = 1 << 29,
+    RootSet = 1 << 30,
+    GarbageCollectionKeepFlags = Native | Async | AsyncLoading,
+    AllFlags = ReachableInCluster | ClusterRoot | Native | Async | AsyncLoading | Unreachable | PendingKill | RootSet,
 };
 
 class UE_UClass;
 class UE_FField;
 
-enum class PropertyType
-{
-	Unknown,
-	StructProperty,
-	ObjectProperty,
-	SoftObjectProperty,
-	FloatProperty,
-	ByteProperty,
-	BoolProperty,
-	IntProperty,
-	Int8Property,
-	Int16Property,
-	Int32Property,
-	Int64Property,
-	UInt16Property,
-	UInt32Property,
-	UInt64Property,
-	NameProperty,
-	DelegateProperty,
-	SetProperty,
-	ArrayProperty,
-	WeakObjectProperty,
-	LazyObjectProperty,
-	StrProperty,
-	TextProperty,
-	MulticastSparseDelegateProperty,
-	EnumProperty,
-	DoubleProperty,
-	MulticastDelegateProperty,
-	ClassProperty,
-	MulticastInlineDelegateProperty,
-	MapProperty,
-	InterfaceProperty,
-	FieldPathProperty,
-	SoftClassProperty
-};
-
-enum class EInternalObjectFlags : int32_t
-{
-	None = 0,
-	ReachableInCluster = 1 << 23,
-	ClusterRoot = 1 << 24,
-	Native = 1 << 25,
-	Async = 1 << 26,
-	AsyncLoading = 1 << 27,
-	Unreachable = 1 << 28,
-	PendingKill = 1 << 29,
-	RootSet = 1 << 30,
-	GarbageCollectionKeepFlags = Native | Async | AsyncLoading,
-	AllFlags = ReachableInCluster | ClusterRoot | Native | Async | AsyncLoading | Unreachable | PendingKill | RootSet,
-};
-
 class UE_UObject
 {
 protected:
-	uint8 *object;
+    uint8_t *object;
 
 public:
-	UE_UObject(void *object) : object((uint8 *)object) {}
-	UE_UObject() : object(nullptr) {}
-	bool operator==(const UE_UObject obj) const { return obj.object == object; };
-	bool operator!=(const UE_UObject obj) const { return obj.object != object; };
-	int32 GetIndex() const;
-	UE_UClass GetClass() const;
-	UE_UObject GetOuter() const;
-	UE_UObject GetPackageObject() const;
-	std::string GetName() const;
-	std::string GetFullName() const;
-	std::string GetCppName() const;
-	void *GetAddress() const { return object; }
-	operator uint8 *() const { return object; };
-	operator bool() const { return object != nullptr; }
+    UE_UObject(void *object) : object((uint8_t *)object) {}
+    UE_UObject() : object(nullptr) {}
+    bool operator==(const UE_UObject obj) const { return obj.object == object; };
+    bool operator!=(const UE_UObject obj) const { return obj.object != object; };
+    int32_t GetIndex() const;
+    UE_UClass GetClass() const;
+    UE_UObject GetOuter() const;
+    UE_UObject GetPackageObject() const;
+    std::string GetName() const;
+    std::string GetFullName() const;
+    std::string GetCppName() const;
+    std::string GetCppTypeName() const;
+    void *GetAddress() const { return object; }
+    operator uint8_t *() const { return object; };
+    operator bool() const { return object != nullptr; }
 
-	template <typename Base>
-	Base Cast() const { return Base(object); }
+    template <typename Base>
+    Base Cast() const { return Base(object); }
 
-	template <typename T>
-	bool IsA() const;
+    template <typename T>
+    bool IsA() const;
 
-	bool IsA(UE_UClass cmp) const;
+    bool IsA(UE_UClass cmp) const;
 
-	static UE_UClass StaticClass();
+    static UE_UClass StaticClass();
+};
+
+class UE_UObjectArray
+{
+public:
+    UE_UObjectArray() : Objects(nullptr) {}
+    
+	uint8_t **Objects;
+
+	int32_t GetNumElements() const;
+
+	uint8_t *GetObjectPtr(int32_t id) const;
+
+	void ForEachObject(const std::function<bool(uint8_t *)> &callback) const;
+	void ForEachObjectOfClass(const class UE_UClass &cmp, const std::function<bool(uint8_t *)> &callback) const;
+    
+    bool IsObject(const UE_UObject &address) const;
+    
+    template<typename T = UE_UObject>
+    T FindObject(const std::string &fullName) const
+    {
+        for (int32_t i = 0; i < GetNumElements(); i++)
+        {
+            UE_UObject object = GetObjectPtr(i);
+            if (object && object.GetFullName() == fullName)
+            {
+                return object.Cast<T>();
+            }
+        }
+        return T();
+    }
+    
+    template<typename T = UE_UObject>
+    T FindObjectFast(const std::string &name) const
+    {
+        for (int32_t i = 0; i < GetNumElements(); i++)
+        {
+            UE_UObject object = GetObjectPtr(i);
+            if (object && object.GetName() == name)
+            {
+                return object.Cast<T>();
+            }
+        }
+        return T();
+    }
+    
+    template<typename T = UE_UObject>
+    T FindObjectFastInOuter(const std::string &name, const std::string &outer)
+    {
+        for (int32_t i = 0; i < GetNumElements(); i++)
+        {
+            UE_UObject object = GetObjectPtr(i);
+            if (object.GetName() == name && object.GetOuter().GetName() == outer)
+            {
+                return object.Cast<T>();
+            }
+        }
+
+        return T();
+    }
+};
+
+class UE_UInterface : public UE_UObject
+{
+public:
+    static UE_UClass StaticClass();
 };
 
 class UE_AActor : public UE_UObject
@@ -153,6 +231,68 @@ public:
 	static UE_UClass StaticClass();
 };
 
+enum EPropertyFlags : uint64_t
+{
+    CPF_None = 0,
+    
+    CPF_Edit = 0x0000000000000001,    ///< Property is user-settable in the editor.
+    CPF_ConstParm = 0x0000000000000002,    ///< This is a constant function parameter
+    CPF_BlueprintVisible = 0x0000000000000004,    ///< This property can be read by blueprint code
+    CPF_ExportObject = 0x0000000000000008,    ///< Object can be exported with actor.
+    CPF_BlueprintReadOnly = 0x0000000000000010,    ///< This property cannot be modified by blueprint code
+    CPF_Net = 0x0000000000000020,    ///< Property is relevant to network replication.
+    CPF_EditFixedSize = 0x0000000000000040,    ///< Indicates that elements of an array can be modified, but its size cannot be changed.
+    CPF_Parm = 0x0000000000000080,    ///< Function/When call parameter.
+    CPF_OutParm = 0x0000000000000100,    ///< Value is copied out after function call.
+    CPF_ZeroConstructor = 0x0000000000000200,    ///< memset is fine for construction
+    CPF_ReturnParm = 0x0000000000000400,    ///< Return value.
+    CPF_DisableEditOnTemplate = 0x0000000000000800,    ///< Disable editing of this property on an archetype/sub-blueprint
+    CPF_NonNullable = 0x0000000000001000,    ///< Object property can never be null
+    CPF_Transient = 0x0000000000002000,    ///< Property is transient: shouldn't be saved or loaded, except for Blueprint CDOs.
+    CPF_Config = 0x0000000000004000,    ///< Property should be loaded/saved as permanent profile.
+    CPF_RequiredParm = 0x0000000000008000,    ///< Parameter must be linked explicitly in blueprint. Leaving the parameter out results in a compile error.
+    CPF_DisableEditOnInstance = 0x0000000000010000,    ///< Disable editing on an instance of this class
+    CPF_EditConst = 0x0000000000020000,    ///< Property is uneditable in the editor.
+    CPF_GlobalConfig = 0x0000000000040000,    ///< Load config from base class, not subclass.
+    CPF_InstancedReference = 0x0000000000080000,    ///< Property is a component references.
+                                                    //CPF_                                = 0x0000000000100000,    ///<
+    CPF_DuplicateTransient = 0x0000000000200000,    ///< Property should always be reset to the default value during any type of duplication (copy/paste, binary duplication, etc.)
+                                                    //CPF_                                = 0x0000000000400000,    ///<
+                                                    //CPF_                                = 0x0000000000800000,    ///<
+    CPF_SaveGame = 0x0000000001000000,    ///< Property should be serialized for save games, this is only checked for game-specific archives with ArIsSaveGame
+    CPF_NoClear = 0x0000000002000000,    ///< Hide clear (and browse) button.
+                                         //CPF_                              = 0x0000000004000000,    ///<
+    CPF_ReferenceParm = 0x0000000008000000,    ///< Value is passed by reference; CPF_OutParam and CPF_Param should also be set.
+    CPF_BlueprintAssignable = 0x0000000010000000,    ///< MC Delegates only.  Property should be exposed for assigning in blueprint code
+    CPF_Deprecated = 0x0000000020000000,    ///< Property is deprecated.  Read it from an archive, but don't save it.
+    CPF_IsPlainOldData = 0x0000000040000000,    ///< If this is set, then the property can be memcopied instead of CopyCompleteValue / CopySingleValue
+    CPF_RepSkip = 0x0000000080000000,    ///< Not replicated. For non replicated properties in replicated structs
+    CPF_RepNotify = 0x0000000100000000,    ///< Notify actors when a property is replicated
+    CPF_Interp = 0x0000000200000000,    ///< interpolatable property for use with cinematics
+    CPF_NonTransactional = 0x0000000400000000,    ///< Property isn't transacted
+    CPF_EditorOnly = 0x0000000800000000,    ///< Property should only be loaded in the editor
+    CPF_NoDestructor = 0x0000001000000000,    ///< No destructor
+                                              //CPF_                                = 0x0000002000000000,    ///<
+    CPF_AutoWeak = 0x0000004000000000,    ///< Only used for weak pointers, means the export type is autoweak
+    CPF_ContainsInstancedReference = 0x0000008000000000,    ///< Property contains component references.
+    CPF_AssetRegistrySearchable = 0x0000010000000000,    ///< asset instances will add properties with this flag to the asset registry automatically
+    CPF_SimpleDisplay = 0x0000020000000000,    ///< The property is visible by default in the editor details view
+    CPF_AdvancedDisplay = 0x0000040000000000,    ///< The property is advanced and not visible by default in the editor details view
+    CPF_Protected = 0x0000080000000000,    ///< property is protected from the perspective of script
+    CPF_BlueprintCallable = 0x0000100000000000,    ///< MC Delegates only.  Property should be exposed for calling in blueprint code
+    CPF_BlueprintAuthorityOnly = 0x0000200000000000,    ///< MC Delegates only.  This delegate accepts (only in blueprint) only events with BlueprintAuthorityOnly.
+    CPF_TextExportTransient = 0x0000400000000000,    ///< Property shouldn't be exported to text format (e.g. copy/paste)
+    CPF_NonPIEDuplicateTransient = 0x0000800000000000,    ///< Property should only be copied in PIE
+    CPF_ExposeOnSpawn = 0x0001000000000000,    ///< Property is exposed on spawn
+    CPF_PersistentInstance = 0x0002000000000000,    ///< A object referenced by the property is duplicated like a component. (Each actor should have an own instance.)
+    CPF_UObjectWrapper = 0x0004000000000000,    ///< Property was parsed as a wrapper class like TSubclassOf<T>, FScriptInterface etc., rather than a USomething*
+    CPF_HasGetValueTypeHash = 0x0008000000000000,    ///< This property can generate a meaningful hash value.
+    CPF_NativeAccessSpecifierPublic = 0x0010000000000000,    ///< Public native access specifier
+    CPF_NativeAccessSpecifierProtected = 0x0020000000000000,    ///< Protected native access specifier
+    CPF_NativeAccessSpecifierPrivate = 0x0040000000000000,    ///< Private native access specifier
+    CPF_SkipSerialization = 0x0080000000000000,    ///< Property shouldn't be serialized, can still be exported to text
+};
+
 typedef std::pair<PropertyType, std::string> type;
 
 class IProperty
@@ -163,12 +303,12 @@ protected:
 public:
 	IProperty(const void *object) : prop(object) {}
 	virtual std::string GetName() const = 0;
-	virtual int32 GetArrayDim() const = 0;
-	virtual int32 GetSize() const = 0;
-	virtual int32 GetOffset() const = 0;
-	virtual uint64 GetPropertyFlags() const = 0;
+	virtual int32_t GetArrayDim() const = 0;
+	virtual int32_t GetSize() const = 0;
+	virtual int32_t GetOffset() const = 0;
+	virtual uint64_t GetPropertyFlags() const = 0;
 	virtual type GetType() const = 0;
-	virtual uint8 GetFieldMask() const = 0;
+	virtual uint8_t GetFieldMask() const = 0;
 };
 
 class IUProperty : public IProperty
@@ -177,22 +317,22 @@ public:
 	using IProperty::IProperty;
 	IUProperty(const class UE_UProperty *object) : IProperty(object) {}
 	virtual std::string GetName() const;
-	virtual int32 GetArrayDim() const;
-	virtual int32 GetSize() const;
-	virtual int32 GetOffset() const;
-	virtual uint64 GetPropertyFlags() const;
+	virtual int32_t GetArrayDim() const;
+	virtual int32_t GetSize() const;
+	virtual int32_t GetOffset() const;
+	virtual uint64_t GetPropertyFlags() const;
 	virtual type GetType() const;
-	virtual uint8 GetFieldMask() const;
+	virtual uint8_t GetFieldMask() const;
 };
 
 class UE_UProperty : public UE_UField
 {
 public:
 	using UE_UField::UE_UField;
-	int32 GetArrayDim() const;
-	int32 GetSize() const;
-	int32 GetOffset() const;
-	uint64 GetPropertyFlags() const;
+	int32_t GetArrayDim() const;
+	int32_t GetSize() const;
+	int32_t GetOffset() const;
+	uint64_t GetPropertyFlags() const;
 	type GetType() const;
 
 	IUProperty GetInterface() const;
@@ -206,11 +346,14 @@ public:
 	UE_UStruct GetSuper() const;
 	UE_FField GetChildProperties() const;
 	UE_UField GetChildren() const;
-	int32 GetSize() const;
+	int32_t GetSize() const;
 	static UE_UClass StaticClass();
+    
+    UE_FField FindChildProp(const std::string &name) const;
+    UE_UField FindChild(const std::string &name) const;
 };
 
-enum EFunctionFlags : uint32
+enum EFunctionFlags : uint32_t
 {
 	// Function flags.
 	FUNC_None = 0x00000000,
@@ -255,10 +398,10 @@ public:
 	using UE_UStruct::UE_UStruct;
 	uintptr_t GetFunc() const;
 
-	int8 GetNumParams() const;
-	int16 GetParamSize() const;
+	int8_t GetNumParams() const;
+	int16_t GetParamSize() const;
 
-	uint32 GetFunctionEFlags() const;
+	uint32_t GetFunctionEFlags() const;
 	std::string GetFunctionFlags() const;
 	static UE_UClass StaticClass();
 };
@@ -282,6 +425,7 @@ class UE_UEnum : public UE_UField
 public:
 	using UE_UField::UE_UField;
 	TArray GetNames() const;
+    std::string GetName() const;
 	static UE_UClass StaticClass();
 };
 
@@ -438,7 +582,7 @@ class UE_UBoolProperty : public UE_UProperty
 {
 public:
 	using UE_UProperty::UE_UProperty;
-	uint8 GetFieldMask() const;
+	uint8_t GetFieldMask() const;
 	std::string GetTypeStr() const;
 	static UE_UClass StaticClass();
 };
@@ -447,18 +591,26 @@ class UE_UEnumProperty : public UE_UProperty
 {
 public:
 	using UE_UProperty::UE_UProperty;
-	UE_UClass GetEnum() const;
+    UE_UProperty GetUnderlayingProperty() const;
+    UE_UEnum GetEnum() const;
 	std::string GetTypeStr() const;
 	static UE_UClass StaticClass();
 };
 
-class UE_UClassProperty : public UE_UProperty
+class UE_UClassProperty : public UE_UObjectPropertyBase
 {
 public:
-	using UE_UProperty::UE_UProperty;
+	using UE_UObjectPropertyBase::UE_UObjectPropertyBase;
 	UE_UClass GetMetaClass() const;
 	std::string GetTypeStr() const;
 	static UE_UClass StaticClass();
+};
+
+class UE_USoftClassProperty : public UE_UClassProperty
+{
+public:
+    using UE_UClassProperty::UE_UClassProperty;
+    std::string GetTypeStr() const;
 };
 
 class UE_USetProperty : public UE_UProperty
@@ -516,25 +668,39 @@ public:
 class UE_FFieldClass
 {
 protected:
-	uint8 *object;
+	uint8_t *object;
 
 public:
-	UE_FFieldClass(uint8 *object) : object(object){};
+	UE_FFieldClass(uint8_t *object) : object(object){};
 	UE_FFieldClass() : object(nullptr){};
+    bool operator==(const UE_FFieldClass obj) const { return obj.object == object; };
+    bool operator!=(const UE_FFieldClass obj) const { return obj.object != object; };
+    void *GetAddress() const { return object; }
+    operator uint8_t *() const { return object; };
+    operator bool() const { return object != nullptr; }
+
+    template <typename Base>
+    Base Cast() const { return Base(object); }
 	std::string GetName() const;
 };
 
 class UE_FField
 {
 protected:
-	uint8 *object;
+	uint8_t *object;
 
 public:
-	UE_FField(uint8 *object) : object(object) {}
+	UE_FField(uint8_t *object) : object(object) {}
 	UE_FField() : object(nullptr) {}
-	operator bool() const { return object != nullptr; }
-	UE_FField GetNext() const;
+    bool operator==(const UE_FField obj) const { return obj.object == object; };
+    bool operator!=(const UE_FField obj) const { return obj.object != object; };
+    void *GetAddress() const { return object; }
+    operator uint8_t *() const { return object; };
+    operator bool() const { return object != nullptr; }
+    
+    UE_FField GetNext() const;
 	std::string GetName() const;
+    UE_FFieldClass GetClass() const;
 
 	template <typename Base>
 	Base Cast() const { return Base(object); }
@@ -545,22 +711,22 @@ class IFProperty : public IProperty
 public:
 	IFProperty(const class UE_FProperty *object) : IProperty(object) {}
 	virtual std::string GetName() const;
-	virtual int32 GetArrayDim() const;
-	virtual int32 GetSize() const;
-	virtual int32 GetOffset() const;
-	virtual uint64 GetPropertyFlags() const;
+	virtual int32_t GetArrayDim() const;
+	virtual int32_t GetSize() const;
+	virtual int32_t GetOffset() const;
+	virtual uint64_t GetPropertyFlags() const;
 	virtual type GetType() const;
-	virtual uint8 GetFieldMask() const;
+	virtual uint8_t GetFieldMask() const;
 };
 
 class UE_FProperty : public UE_FField
 {
 public:
 	using UE_FField::UE_FField;
-	int32 GetArrayDim() const;
-	int32 GetSize() const;
-	int32 GetOffset() const;
-	uint64 GetPropertyFlags() const;
+	int32_t GetArrayDim() const;
+	int32_t GetSize() const;
+	int32_t GetOffset() const;
+	uint64_t GetPropertyFlags() const;
 	type GetType() const;
 	IFProperty GetInterface() const;
 };
@@ -601,10 +767,10 @@ class UE_FBoolProperty : public UE_FProperty
 {
 public:
 	using UE_FProperty::UE_FProperty;
-	uint8 GetFieldSize() const;
-	uint8 GetByteOffset() const;
-	uint8 GetByteMask() const;
-	uint8 GetFieldMask() const;
+	uint8_t GetFieldSize() const;
+	uint8_t GetByteOffset() const;
+	uint8_t GetByteMask() const;
+	uint8_t GetFieldMask() const;
 	std::string GetTypeStr() const;
 };
 
@@ -612,7 +778,8 @@ class UE_FEnumProperty : public UE_FProperty
 {
 public:
 	using UE_FProperty::UE_FProperty;
-	UE_UClass GetEnum() const;
+    UE_FProperty GetUnderlayingProperty() const;
+    UE_UEnum GetEnum() const;
 	std::string GetTypeStr() const;
 };
 
@@ -622,6 +789,13 @@ public:
 	using UE_FObjectPropertyBase::UE_FObjectPropertyBase;
 	UE_UClass GetMetaClass() const;
 	std::string GetTypeStr() const;
+};
+
+class UE_FSoftClassProperty : public UE_FClassProperty
+{
+public:
+    using UE_FClassProperty::UE_FClassProperty;
+    std::string GetTypeStr() const;
 };
 
 class UE_FSetProperty : public UE_FProperty
@@ -669,31 +843,6 @@ bool UE_UObject::IsA() const
 	return IsA(cmp);
 }
 
-// Wrapper for 'FILE*' that closes the file handle when it goes out of scope
-class File
-{
-public:
-    FILE *file;
-
-    File() : file(nullptr) {}
-    File(const std::string &path, const char *mode)
-    {
-        file = fopen(path.c_str(), mode);
-    }
-    ~File()
-    {
-        if (file)
-        {
-            fclose(file);
-        }
-    }
-	inline void open(const std::string &path, const char *mode) { file = fopen(path.c_str(), mode); }
-	inline void close() { if (file) { fclose(file); file = nullptr; } }
-
-    bool ok() const { return file != nullptr; }
-    operator FILE *() { return file; }
-};
-
 class UE_UPackage
 {
 private:
@@ -701,8 +850,8 @@ private:
 	{
 		std::string Type;
 		std::string Name;
-		uint32 Offset = 0;
-		uint32 Size = 0;
+		uint32_t Offset = 0;
+		uint32_t Size = 0;
 	};
 	struct Function
 	{
@@ -710,10 +859,10 @@ private:
 		std::string FullName;
 		std::string CppName;
 		std::string Params;
-		uint32 EFlags = 0;
+		uint32_t EFlags = 0;
 		std::string Flags;
-		int8 NumParams = 0;
-		int16 ParamSize = 0;
+		int8_t NumParams = 0;
+		int16_t ParamSize = 0;
 		uintptr_t Func = 0;
 	};
 	struct Struct
@@ -721,8 +870,8 @@ private:
 		std::string Name;
 		std::string FullName;
 		std::string CppName;
-		uint32 Inherited = 0;
-		uint32 Size = 0;
+		uint32_t Inherited = 0;
+		uint32_t Size = 0;
 		std::vector<Member> Members;
 		std::vector<Function> Functions;
 	};
@@ -734,7 +883,7 @@ private:
 	};
 
 private:
-	std::pair<uint8 *const, std::vector<UE_UObject>> *Package;
+	std::pair<uint8_t *const, std::vector<UE_UObject>> *Package;
 
 public:
 	std::vector<Struct> Classes;
@@ -742,35 +891,20 @@ public:
 	std::vector<Enum> Enums;
 
 private:
-	static void GenerateFunction(UE_UFunction fn, Function *out);
-	static void GenerateStruct(UE_UStruct object, std::vector<Struct> &arr);
-	static void GenerateEnum(UE_UEnum object, std::vector<Enum> &arr);
+	static void GenerateFunction(const UE_UFunction &fn, Function *out);
+	static void GenerateStruct(const UE_UStruct &object, std::vector<Struct> &arr);
+	static void GenerateEnum(const UE_UEnum &object, std::vector<Enum> &arr);
 
-	static void GenerateBitPadding(std::vector<Member> &members, uint32 offset, uint8 bitOffset, uint8 size);
-	static void GeneratePadding(std::vector<Member> &members, uint32 offset, uint32 size);
-	static void FillPadding(UE_UStruct object, std::vector<Member> &members, uint32 &offset, uint8 &bitOffset, uint32 end);
+	static void GenerateBitPadding(std::vector<Member> &members, uint32_t offset, uint8_t bitOffset, uint8_t size);
+	static void GeneratePadding(std::vector<Member> &members, uint32_t offset, uint32_t size);
+	static void FillPadding(const UE_UStruct &object, std::vector<Member> &members, uint32_t &offset, uint8_t &bitOffset, uint32_t end);
 
-	static void SaveStruct(std::vector<Struct> &arr, FILE *file);
-	static void SaveEnum(std::vector<Enum> &arr, FILE *file);
+	static void AppendStructsToBuffer(std::vector<Struct> &arr, class BufferFmt *bufFmt);
+	static void AppendEnumsToBuffer(std::vector<Enum> &arr, class BufferFmt *bufFmt);
 
 public:
-	UE_UPackage(std::pair<uint8 *const, std::vector<UE_UObject>> &package) : Package(&package){};
-	void Process();
-	bool Save(const std::string &dir, const std::string &headers_dir);
-	UE_UObject GetObject() const;
-};
-
-namespace Profile
-{
-	extern uintptr_t BaseAddress;
-
-	extern bool isUsingFNamePool;
-
-	extern uintptr_t NamePoolDataPtr;
-	extern uintptr_t GNamesPtr;
-	extern uintptr_t ObjObjectsPtr;
-
-	extern TUObjectArray ObjObjects;
-
-	extern UE_Offsets offsets;
+	UE_UPackage(std::pair<uint8_t *const, std::vector<UE_UObject>> &package) : Package(&package){};
+    inline UE_UObject GetObject() const { return UE_UObject(Package->first); }
+    void Process();
+	bool AppendToBuffer(class BufferFmt *bufFmt);
 };

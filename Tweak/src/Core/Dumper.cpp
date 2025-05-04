@@ -1,6 +1,6 @@
 #include "Dumper.hpp"
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include <nlohmann/json.hpp>
 using json = nlohmann::json;
@@ -9,62 +9,60 @@ using json = nlohmann::json;
 
 namespace Dumper
 {
+    namespace jf_ns
+    {
+        struct JsonFunction
+        {
+            std::string Parent;
+            std::string Name;
+            uint64_t Address = 0;
+        };
+        static std::vector<JsonFunction> jsonFunctions;
+        
+        void to_json(json& j, const JsonFunction &jf)
+        {
+            if (jf.Parent.empty() || jf.Parent == "None" || jf.Parent == "null")
+                return;
+            if (jf.Name.empty() || jf.Name == "None" || jf.Name == "null")
+                return;
+            if (jf.Address == 0)
+                return;
+            
+            std::string fname = ioutils::replace_specials(jf.Parent, '_');
+            fname += "$$";
+            fname += ioutils::replace_specials(jf.Name, '_');
+            
+            j = json{{"Name", fname}, {"Address", (jf.Address - UEVars::BaseAddress) - UEVars::pagezero_size}};
+        }
+    }
 
-	namespace JsonGen
+	DumpStatus InitUEVars(IGameProfile *gameProfile)
 	{
-		struct IdaFunction
-		{
-			std::string Parent;
-			std::string Name;
-			uint64 Address = 0;
-		};
-
-		static std::vector<IdaFunction> idaFunctions;
-		static unsigned long __pagezero_size = 0;
-
-		void to_json(json &j, const IdaFunction &f)
-		{
-			if (f.Parent.empty() || f.Parent == "None" || f.Parent == "null")
-				return;
-			if (f.Name.empty() || f.Name == "None" || f.Name == "null")
-				return;
-			if (f.Address == 0)
-				return;
-
-			std::string fname = ioutils::replace_specials(f.Parent, '_');
-			fname += "$$";
-			fname += ioutils::replace_specials(f.Name, '_');
-
-			j = json{{"Name", fname}, {"Address", f.Address - __pagezero_size}};
-		}
-	};
-
-	DumpStatus InitProfile(IGameProfile *gameProfile)
-	{
-		Profile::BaseAddress = gameProfile->GetExecutableInfo().address;
-		if (Profile::BaseAddress == 0)
+		UEVars::BaseAddress = gameProfile->GetExecutableInfo().address;
+		if (UEVars::BaseAddress == 0)
 			return UE_DS_ERROR_EXE_NOT_FOUND;
 
-		GetSegmentData(gameProfile->GetExecutableInfo().header, "__PAGEZERO", &JsonGen::__pagezero_size);
+        UEVars::pagezero_size = gameProfile->GetExecutableInfo().getSegment("__PAGEZERO").size;
 
 		UE_Offsets *p_offsets = gameProfile->GetOffsets();
 		if (!p_offsets)
 			return UE_DS_ERROR_INIT_OFFSETS;
 
-		Profile::offsets = *(UE_Offsets *)p_offsets;
+		UEVars::offsets = *(UE_Offsets *)p_offsets;
 
-		Profile::isUsingFNamePool = gameProfile->IsUsingFNamePool();
+		UEVars::isUsingFNamePool = gameProfile->IsUsingFNamePool();
+        UEVars::isUsingOutlineNumberName = gameProfile->isUsingOutlineNumberName();
 
-		if (Profile::isUsingFNamePool)
+		if (UEVars::isUsingFNamePool)
 		{
-			Profile::NamePoolDataPtr = gameProfile->GetNamesPtr();
-			if (Profile::NamePoolDataPtr == 0)
+			UEVars::NamePoolDataPtr = gameProfile->GetNamesPtr();
+			if (UEVars::NamePoolDataPtr == 0)
 				return UE_DS_ERROR_INIT_NAMEPOOL;
 		}
 		else
 		{
-			Profile::GNamesPtr = gameProfile->GetNamesPtr();
-			if (Profile::GNamesPtr == 0)
+			UEVars::GNamesPtr = gameProfile->GetNamesPtr();
+			if (UEVars::GNamesPtr == 0)
 				return UE_DS_ERROR_INIT_GNAMES;
 		}
 
@@ -72,215 +70,232 @@ namespace Dumper
 		if (GUObjectsArrayPtr == 0)
 			return UE_DS_ERROR_INIT_GUOBJECTARRAY;
 
-		Profile::ObjObjectsPtr = GUObjectsArrayPtr + Profile::offsets.FUObjectArray.ObjObjects;
-		if (!vm_rpm_ptr((void *)Profile::ObjObjectsPtr, &Profile::ObjObjects, sizeof(TUObjectArray)))
-			return UE_DS_ERROR_INIT_GUOBJECTARRAY;
+		UEVars::ObjObjectsPtr = GUObjectsArrayPtr + UEVars::offsets.FUObjectArray.ObjObjects;
+		
+        if (!vm_rpm_ptr((void *)(UEVars::ObjObjectsPtr + UEVars::offsets.TUObjectArray.Objects), &UEVars::ObjObjects.Objects, sizeof(uintptr_t)))
+			return UE_DS_ERROR_INIT_OBJOBJECTS;
+        
+        if (gameProfile->CustomNameByIndex())
+            UEVars::customNameByIndex = gameProfile->CustomNameByIndex();
+        
+        if (gameProfile->CustomObjectByIndex())
+            UEVars::customObjectByIndex = gameProfile->CustomObjectByIndex();
 
 		return UE_DS_NONE;
 	}
 
-	DumpStatus Dump(const std::string &dir, const std::string &headers_dir, IGameProfile *profile)
-	{
-		auto exe_info = profile->GetExecutableInfo();
-		if (!exe_info.name || exe_info.address == 0)
-			return UE_DS_ERROR_EXE_NOT_FOUND;
+    DumpStatus Dump(IGameProfile *profile, std::unordered_map<std::string, BufferFmt> *outBuffersMap)
+    {
+        auto exe_info = profile->GetExecutableInfo();
+        if (!exe_info.name || exe_info.address == 0)
+            return UE_DS_ERROR_EXE_NOT_FOUND;
+        
+        auto uevars_init_status = InitUEVars(profile);
+        if (uevars_init_status != UE_DS_NONE)
+            return uevars_init_status;
+        
+        outBuffersMap->insert({"Logs.txt", BufferFmt()});
+        BufferFmt &logsBufferFmt = outBuffersMap->at("Logs.txt");
+        
+        logsBufferFmt.append("Executable: {}\n", exe_info.name);
+        if (UEVars::pagezero_size > 0)
+        {
+            logsBufferFmt.append("__PAGEZERO Size: {:#x}\n", UEVars::pagezero_size);
+        }
+        else
+        {
+            logsBufferFmt.append("__PAGEZERO not available\n");
+        }
+        logsBufferFmt.append("BaseAddress: {:#08x}\n", UEVars::BaseAddress);
+        logsBufferFmt.append("==========================\n");
+        
+        if (!UEVars::isUsingFNamePool)
+        {
+            logsBufferFmt.append("GNames: [Base + {:#08x}] = {:#08x}\n",
+                                 UEVars::GNamesPtr-UEVars::BaseAddress, UEVars::GNamesPtr);
+        }
+        else
+        {
+            logsBufferFmt.append("FNamePool: [Base + {:#08x}] = {:#08x}\n",
+                                 UEVars::NamePoolDataPtr-UEVars::BaseAddress, UEVars::NamePoolDataPtr);
+        }
+        
+        logsBufferFmt.append("Test dumping first 5 name entries\n");
+        for (int i = 0; i < 5; i++)
+        {
+            logsBufferFmt.append("GetNameByID({}): {}\n", i, UE_GetNameByID(i));
+        }
+        logsBufferFmt.append("==========================\n");
+        
+        logsBufferFmt.append("ObjObjects: [Base + {:#08x}] = {:#08x}\n", UEVars::ObjObjectsPtr-UEVars::BaseAddress, UEVars::ObjObjectsPtr);
+        logsBufferFmt.append("ObjObjects Num: {}\n", UEVars::ObjObjects.GetNumElements());
+        logsBufferFmt.append("Test Dumping First 5 Name Entries\n");
+        for (int i = 0; i < 5; i++)
+        {
+            UE_UObject obj =  UEVars::ObjObjects.GetObjectPtr(i);
+            logsBufferFmt.append("GetObjectPtr({}): {}\n", i, obj.GetName());
+        }
+        logsBufferFmt.append("==========================\n");
+        
+        outBuffersMap->insert({"Objects.txt", BufferFmt()});
+        BufferFmt &objsBufferFmt = outBuffersMap->at("Objects.txt");
+        
+        std::vector<std::pair<uint8_t *const, std::vector<UE_UObject>>> packages;
+        std::function<bool(UE_UObject)> callback;
+        
+        callback = [&objsBufferFmt, &packages](UE_UObject object)
+        {
+            if (object.IsA<UE_UFunction>() || object.IsA<UE_UStruct>() || object.IsA<UE_UEnum>())
+            {
+                bool found = false;
+                auto packageObj = object.GetPackageObject();
+                for (auto &pkg : packages)
+                {
+                    if (pkg.first == packageObj)
+                    {
+                        pkg.second.push_back(object);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found)
+                {
+                    packages.push_back(std::make_pair(packageObj, std::vector<UE_UObject>(1, object)));
+                }
+            }
+            
+            objsBufferFmt.append("[{:010}]: {}\n", object.GetIndex(), object.GetFullName());
+            
+            return false;
+        };
+        
+        UEVars::ObjObjects.ForEachObject(callback);
+        
+        if (!packages.size())
+        {
+            logsBufferFmt.append("Error: Packages are empty.\n");
+            return UE_DS_ERROR_EMPTY_PACKAGES;
+        }
+        
+        int packages_saved = 0;
+        std::string packages_unsaved{};
+        
+        int classes_saved = 0;
+        int structs_saved = 0;
+        int enums_saved = 0;
+        
+        static bool processInternal_once = false;
+        
+        outBuffersMap->insert({"AIOHeader.hpp", BufferFmt()});
+        BufferFmt &aioBufferFmt = outBuffersMap->at("AIOHeader.hpp");
+        
+        for (UE_UPackage package : packages)
+        {
+            package.Process();
+            
+            if (!package.AppendToBuffer(&aioBufferFmt))
+            {
+                packages_unsaved += "\t";
+                packages_unsaved += (package.GetObject().GetName() + ",\n");
+                continue;
+            }
+            
+            packages_saved++;
+            classes_saved += package.Classes.size();
+            structs_saved += package.Structures.size();
+            enums_saved += package.Enums.size();
+            
+            for (const auto &cls : package.Classes)
+            {
+                for (const auto &func : cls.Functions)
+                {
+                    // UObject::ProcessInternal for blueprint functions
+                    if(!processInternal_once && (func.EFlags & FUNC_BlueprintEvent) && func.Func)
+                    {
+                        jf_ns::jsonFunctions.push_back({"UObject", "ProcessInternal", func.Func});
+                        processInternal_once = true;
+                    }
+                    
+                    if ((func.EFlags & FUNC_Native) && func.Func)
+                    {
+                        std::string execFuncName = "exec";
+                        execFuncName += func.Name;
+                        jf_ns::jsonFunctions.push_back({cls.Name, execFuncName, func.Func});
+                    }
+                }
+            }
+            
+            for (const auto &st : package.Structures)
+            {
+                for (const auto &func : st.Functions)
+                {
+                    if ((func.EFlags & FUNC_Native) && func.Func)
+                    {
+                        std::string execFuncName = "exec";
+                        execFuncName += func.Name;
+                        jf_ns::jsonFunctions.push_back({st.Name, execFuncName, func.Func});
+                    }
+                }
+            }
+        }
 
-		auto profile_init_status = InitProfile(profile);
-		if (profile_init_status != UE_DS_NONE)
-			return profile_init_status;
-
-		File logfile(dir + "/logs.txt", "w");
-		if (!logfile.ok())
-			return UE_DS_ERROR_IO_OPERATION;
-
-		fmt::print(logfile, "Executable: {}\n", exe_info.name);
-		if (JsonGen::__pagezero_size > 0)
-		{
-			fmt::print(logfile, "__PAGEZERO Size: {:#x}\n", JsonGen::__pagezero_size);
-		}
-		else
-		{
-			fmt::print(logfile, "__PAGEZERO not available\n");
-		}
-		fmt::print(logfile, "BaseAddress: {:#08x}\n", Profile::BaseAddress);
-		fmt::print(logfile, "==========================\n");
-
-		if (!Profile::isUsingFNamePool)
-		{
-			fmt::print(logfile, "GNames: [Base + {:#08x}] = {:#08x}\n", Profile::GNamesPtr-Profile::BaseAddress, Profile::GNamesPtr);
-		}
-		else
-		{
-			fmt::print(logfile, "FNamePool: [Base + {:#08x}] = {:#08x}\n", Profile::NamePoolDataPtr-Profile::BaseAddress, Profile::NamePoolDataPtr);
-		}
-		fmt::print(logfile, "Test Dumping First 5 Name Entries\n");
-		for (int i = 0; i < 5; i++)
-		{
-			std::string name = GetNameByID(i);
-			if (name.empty()) continue;
-
-			fmt::print(logfile, "GetNameByID({}): {}\n", i, GetNameByID(i));
-		}
-		fmt::print(logfile, "==========================\n");
-
-		fmt::print(logfile, "ObjObjects: [Base + {:#08x}] = {:#08x}\n", Profile::ObjObjectsPtr-Profile::BaseAddress, Profile::ObjObjectsPtr);
-		fmt::print(logfile, "ObjObjects Num: {}\n", Profile::ObjObjects.GetNumElements());
-		fmt::print(logfile, "ObjObjects Max: {}\n", Profile::ObjObjects.GetMaxElements());
-		fmt::print(logfile, "==========================\n");
-
-		File objfile(dir + "/ObjectsDump.txt", "w");
-		if (!objfile.ok())
-			return UE_DS_ERROR_IO_OPERATION;
-
-		std::function<void(UE_UObject)> objdump_callback;
-		objdump_callback = [&objfile](UE_UObject object)
-		{
-			fmt::print(objfile, "[{:010}]: {}\n", object.GetIndex(), object.GetFullName());
-		};
-
-		std::unordered_map<uint8 *, std::vector<UE_UObject>> packages;
-		std::function<void(UE_UObject)> callback;
-		callback = [&objdump_callback, &packages](UE_UObject object)
-		{
-			if (object.IsA<UE_UFunction>() || object.IsA<UE_UStruct>() || object.IsA<UE_UEnum>())
-			{
-				auto packageObj = object.GetPackageObject();
-				packages[packageObj].push_back(object);
-			}
-			if (objdump_callback)
-				objdump_callback(object);
-		};
-
-		Profile::ObjObjects.ForEachObject(callback);
-
-		if (!packages.size())
-		{
-			fmt::print(logfile, "Error: Packages are empty.\n");
-			return UE_DS_ERROR_EMPTY_PACKAGES;
-		}
-
-		int packages_saved = 0;
-		std::string packages_unsaved{};
-
-		int classes_saved = 0;
-		int structs_saved = 0;
-		int enums_saved = 0;
-
-		static bool processInternal_once = false;
-		
-		for (UE_UPackage package : packages)
-		{
-			package.Process();
-			if (package.Save(dir, headers_dir))
-			{
-				packages_saved++;
-				classes_saved += package.Classes.size();
-				structs_saved += package.Structures.size();
-				enums_saved += package.Enums.size();
-
-				for (const auto &cls : package.Classes)
-				{
-					if (!cls.Functions.size())
-						continue;
-
-					for (const auto &func : cls.Functions)
-					{
-						// UObject::ProcessInternal for blueprint functions
-						if(!processInternal_once && (func.EFlags & FUNC_BlueprintEvent) && func.Func)
-						{
-							JsonGen::idaFunctions.push_back({"UObject", "ProcessInternal", func.Func - Profile::BaseAddress});
-							processInternal_once = true;
-						}
-
-						if ((func.EFlags & FUNC_Native) && func.Func)
-						{
-							std::string execFuncName = "exec";
-							execFuncName += func.Name;
-							JsonGen::idaFunctions.push_back({cls.Name, execFuncName, func.Func - Profile::BaseAddress});
-						}
-					}
-				}
-
-				for (const auto &st : package.Structures)
-				{
-					if (!st.Functions.size())
-						continue;
-
-					for (const auto &func : st.Functions)
-					{
-						if ((func.EFlags & FUNC_Native) && func.Func)
-						{
-							std::string execFuncName = "exec";
-							execFuncName += func.Name;
-							JsonGen::idaFunctions.push_back({st.Name, execFuncName, func.Func - Profile::BaseAddress});
-						}
-					}
-				}
-			}
-			else
-			{
-				packages_unsaved += "\t";
-				packages_unsaved += (package.GetObject().GetName() + ",\n");
-			}
-		}
-
-		fmt::print(logfile, "Saved packages: {}\nSaved classes: {}\nSaved structs: {}\nSaved enums: {}\n", packages_saved, classes_saved, structs_saved, enums_saved);
+        logsBufferFmt.append("Saved packages: {}\nSaved classes: {}\nSaved structs: {}\nSaved enums: {}\n", packages_saved, classes_saved, structs_saved, enums_saved);
 
 		if (packages_unsaved.size())
 		{
 			packages_unsaved.erase(packages_unsaved.size() - 2);
-			fmt::print(logfile, "Unsaved packages: [\n{}\n]\n", packages_unsaved);
+            logsBufferFmt.append("Unsaved packages: [\n{}\n]\n", packages_unsaved);
 		}
 
-		fmt::print(logfile, "==========================\n");
+        logsBufferFmt.append("==========================\n");
 
-		if (JsonGen::idaFunctions.size())
+		if (jf_ns::jsonFunctions.size())
 		{
-			fmt::print(logfile, "Generating json...\nFunctions: {}\n", JsonGen::idaFunctions.size());
-			json js;
-			for (auto &idf : JsonGen::idaFunctions)
+            outBuffersMap->insert({"script.json", BufferFmt()});
+            BufferFmt &scriptBufferFmt = outBuffersMap->at("script.json");
+            
+            scriptBufferFmt.append("Generating json...\nFunctions: {}\n", jf_ns::jsonFunctions.size());
+			
+            json js ;
+			for (const auto &jf : jf_ns::jsonFunctions)
 			{
-				js["Functions"].push_back(idf);
+				js["Functions"].push_back(jf);
 			}
 
-			File jsfile(dir + "/script.json", "w");
-			if (!jsfile.ok())
-			    return UE_DS_ERROR_IO_OPERATION;
-
-			fmt::print(jsfile, "{}", js.dump(4));
+            scriptBufferFmt.append("{}", js.dump(4));
 		}
 
 		return UE_DS_SUCCESS;
 	}
 
 	std::string DumpStatusToStr(DumpStatus ds)
-	{
-		switch (ds)
-		{
-		case UE_DS_NONE:
-			return "DS_NONE";
-		case UE_DS_SUCCESS:
-			return "DS_SUCCESS";
-		case UE_DS_ERROR_EXE_NAME_NULL:
-			return "DS_ERROR_EXE_NAME_NULL";
-		case UE_DS_ERROR_EXE_NOT_FOUND:
-			return "DS_ERROR_EXE_NOT_FOUND";
-		case UE_DS_ERROR_IO_OPERATION:
-			return "DS_ERROR_IO_OPERATION";
-		case UE_DS_ERROR_INIT_GNAMES:
-			return "DS_ERROR_INIT_GNAMES";
-		case UE_DS_ERROR_INIT_NAMEPOOL:
-			return "DS_ERROR_INIT_NAMEPOOL";
-		case UE_DS_ERROR_INIT_GUOBJECTARRAY:
-			return "DS_ERROR_INIT_GUOBJECTARRAY";
-		case UE_DS_ERROR_INIT_OFFSETS:
-			return "DS_ERROR_INIT_OFFSETS";
-		case UE_DS_ERROR_EMPTY_PACKAGES:
-			return "DS_ERROR_EMPTY_PACKAGES";
-		default:
-			break;
-		}
-		return "UNKNOWN";
-	}
+    {
+        switch (ds)
+        {
+            case UE_DS_NONE:
+                return "DS_NONE";
+            case UE_DS_SUCCESS:
+                return "DS_SUCCESS";
+            case UE_DS_ERROR_EXE_NAME_NULL:
+                return "DS_ERROR_EXE_NAME_NULL";
+            case UE_DS_ERROR_EXE_NOT_FOUND:
+                return "DS_ERROR_EXE_NOT_FOUND";
+            case UE_DS_ERROR_INIT_GNAMES:
+                return "DS_ERROR_INIT_GNAMES";
+            case UE_DS_ERROR_INIT_NAMEPOOL:
+                return "DS_ERROR_INIT_NAMEPOOL";
+            case UE_DS_ERROR_INIT_GUOBJECTARRAY:
+                return "DS_ERROR_INIT_GUOBJECTARRAY";
+            case UE_DS_ERROR_INIT_OBJOBJECTS:
+                return "DS_ERROR_INIT_OBJOBJECTS";
+            case UE_DS_ERROR_INIT_OFFSETS:
+                return "DS_ERROR_INIT_OFFSETS";
+            case UE_DS_ERROR_EMPTY_PACKAGES:
+                return "DS_ERROR_EMPTY_PACKAGES";
+            default:
+                break;
+        }
+        return "UNKNOWN";
+    }
 
 }

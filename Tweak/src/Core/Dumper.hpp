@@ -4,29 +4,28 @@
 #include <string>
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 
-#include <types.h>
-
+#include "../Utils/BufferFmt.hpp"
 #include "GameProfiles/GameProfile.hpp"
 
 namespace Dumper
 {
-    enum DumpStatus : uint8
+    enum DumpStatus : uint8_t
     {
         UE_DS_NONE = 0,
         UE_DS_SUCCESS,
         UE_DS_ERROR_EXE_NAME_NULL,
         UE_DS_ERROR_EXE_NOT_FOUND,
-        UE_DS_ERROR_IO_OPERATION,
         UE_DS_ERROR_INIT_GNAMES,
         UE_DS_ERROR_INIT_NAMEPOOL,
         UE_DS_ERROR_INIT_GUOBJECTARRAY,
+        UE_DS_ERROR_INIT_OBJOBJECTS,
         UE_DS_ERROR_INIT_OFFSETS,
         UE_DS_ERROR_EMPTY_PACKAGES
     };
 
-    DumpStatus Dump(const std::string &dir, const std::string &headers_dir, IGameProfile *profile);
+    DumpStatus Dump(IGameProfile *profile, std::unordered_map<std::string, BufferFmt> *outBuffersMap);
 
     std::string DumpStatusToStr(DumpStatus ds);
-
 }

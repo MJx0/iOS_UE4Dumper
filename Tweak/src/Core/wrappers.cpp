@@ -1,157 +1,207 @@
 #include "wrappers.hpp"
 
-#include <algorithm>
-#include <fmt/core.h>
+#include <hash/hash.h>
 
-namespace Profile
+#include "../Utils/memory.hpp"
+#include "../Utils/BufferFmt.hpp"
+
+#include <utfcpp/utf8.h>
+
+namespace UEVars
 {
     uintptr_t BaseAddress = 0;
+    unsigned long pagezero_size = 0;
 
     bool isUsingFNamePool = false;
+    bool isUsingOutlineNumberName = false;
 
     uintptr_t NamePoolDataPtr = 0;
     uintptr_t GNamesPtr = 0;
     uintptr_t ObjObjectsPtr = 0;
 
-    TUObjectArray ObjObjects{};
+    UE_UObjectArray ObjObjects{};
 
     UE_Offsets offsets{};
+    
+    NameByIndex_t customNameByIndex = nullptr;
+    ObjectByIndex_t customObjectByIndex = nullptr;
 }
 
-std::string GetNameByID(int32 id)
+
+uint8_t *GetNameEntryByID(int32_t id)
 {
     if (id < 0)
-        return "";
-
-    if (Profile::GNamesPtr == 0 && Profile::NamePoolDataPtr == 0)
-        return "";
-
-    static std::unordered_map<int32, std::string> namesCachedMap;
-    if (namesCachedMap.count(id) > 0)
-        return namesCachedMap[id];
-
-    std::string name = "";
-
-    if (!Profile::isUsingFNamePool)
+        return nullptr;
+    
+    if (UEVars::GNamesPtr == 0 && UEVars::NamePoolDataPtr == 0)
+        return nullptr;
+    
+    if (!UEVars::isUsingFNamePool)
     {
-        const int32 ElementsPerChunk = 16384;
-        const int32 ChunkIndex = id / ElementsPerChunk;
-        const int32 WithinChunkIndex = id % ElementsPerChunk;
-
+        const int32_t ElementsPerChunk = 16384;
+        const int32_t ChunkIndex = id / ElementsPerChunk;
+        const int32_t WithinChunkIndex = id % ElementsPerChunk;
+        
         // FNameEntry**
-        uint8 *FNameEntryArray = vm_rpm_ptr<uint8 *>((void *)(Profile::GNamesPtr + ChunkIndex * sizeof(uintptr_t)));
+        uint8_t *FNameEntryArray = vm_rpm_ptr<uint8_t *>((void*)(UEVars::GNamesPtr + ChunkIndex * sizeof(uintptr_t)));
         if (!FNameEntryArray)
-            return name;
-
+            return nullptr;
+        
         // FNameEntry*
-        uint8 *FNameEntryPtr = vm_rpm_ptr<uint8 *>((void *)(FNameEntryArray + WithinChunkIndex * sizeof(uintptr_t)));
-        if (!FNameEntryPtr)
-            return name;
+        return vm_rpm_ptr<uint8_t *>(FNameEntryArray + WithinChunkIndex * sizeof(uintptr_t));
+    }
+    
+    uint32_t block_offset = ((id >> 16) * sizeof(void*));
+    uint32_t chunck_offset = ((id & 0xffff) * UEVars::offsets.Stride);
+    
+    uint8_t *chunck = vm_rpm_ptr<uint8_t *>((void *)(UEVars::NamePoolDataPtr + UEVars::offsets.FNamePoolBlocks + block_offset));
+    if (!chunck)
+        return nullptr;
+    
+    return (chunck + chunck_offset);
+}
 
-        // isWide
-        int32 name_index = 0;
-        if (!vm_rpm_ptr((void *)(FNameEntryPtr), &name_index, sizeof(int32)) || (name_index & 0x1))
-        {
-            return name;
-        }
-        name = vm_rpm_str((void *)(FNameEntryPtr + Profile::offsets.FNameEntry.Name), Profile::offsets.FNameMaxSize);
+std::string GetNameEntryStr(uint8_t *entry)
+{
+    if (!entry) return "";
+    
+    uint8_t *pStr = nullptr;
+    bool isWide = false;
+    size_t strLen = 0;
+    int strNumber = 0;
+    
+    if (!UEVars::isUsingFNamePool)
+    {
+        int32_t name_index = 0;
+        if (!vm_rpm_ptr(entry, &name_index, sizeof(int32_t)))
+            return "";
+        
+        pStr = entry + UEVars::offsets.FNameEntry.Name;
+        isWide = (name_index & 1);
+        strLen = UEVars::offsets.FNameMaxSize;
     }
     else
     {
-        uint32 block_offset = ((id >> 16) * sizeof(void*));
-        uint32 chunck_offset = ((id & 0xffff) * Profile::offsets.Stride);
-
-        uint8 *chunck = vm_rpm_ptr<uint8 *>((void *)(Profile::NamePoolDataPtr + Profile::offsets.FNamePoolBlocks + block_offset));
-        if (!chunck)
-            return name;
-
-        int16 nameHeader = 0;
-        if (!vm_rpm_ptr((void *)(chunck + chunck_offset + Profile::offsets.FNameEntry23.Info), &nameHeader, sizeof(int16)))
+        int16_t header = 0;
+        if (!vm_rpm_ptr(entry + UEVars::offsets.FNameEntry23.Header, &header, sizeof(int16_t)))
+            return "";
+        
+        if (UEVars::isUsingOutlineNumberName && UEVars::offsets.FNameEntry23.GetLength(header) == 0)
         {
-            return name;
+            const int32_t stringOff = UEVars::offsets.FNameEntry23.Header + sizeof(int16_t);
+            const int32_t entryIdOff = stringOff + ((stringOff == 6) * 2);
+            const int32_t nextEntryId = vm_rpm_ptr<int32_t>(entry + entryIdOff);
+            if (nextEntryId <= 0)
+                return "";
+            
+            strNumber = vm_rpm_ptr<int32_t>(entry + entryIdOff + sizeof(int32_t));
+            entry = GetNameEntryByID(nextEntryId);
+            if (!vm_rpm_ptr(entry + UEVars::offsets.FNameEntry23.Header, &header, sizeof(int16_t)))
+                return "";
         }
-
-        if (!(nameHeader & 0x1)) // !isWide
-        {
-            int16 len = (nameHeader >> Profile::offsets.FNameEntry23.LenBit);
-            if (len > 0 && len <= Profile::offsets.FNameMaxSize)
-            {
-                name = vm_rpm_str((void *)(chunck + chunck_offset + Profile::offsets.FNameEntry23.HeaderSize), len);
-            }
-        }
+        
+        strLen = std::min<size_t>(UEVars::offsets.FNameEntry23.GetLength(header), UEVars::offsets.FNameMaxSize);
+        if (strLen <= 0)
+            return "";
+        
+        isWide = UEVars::offsets.FNameEntry23.GetIsWide(header);
+        pStr = entry + UEVars::offsets.FNameEntry23.Header + sizeof(int16_t);
     }
+    
+    std::string result = "";
+    
+    if (isWide)
+    {
+        std::wstring wstr = vm_rpm_strw(pStr, strLen);
+        if (!wstr.empty())
+            utf8::utf16to8(wstr.begin(), wstr.end(), std::back_inserter(result));
+    }
+    else
+    {
+        result = vm_rpm_str(pStr, strLen);
+    }
+    
+    if (strNumber > 0)
+        result += '_' + std::to_string(strNumber - 1);
+    
+    return result;
+}
 
-    namesCachedMap[id] = name;
+std::string UE_GetNameByID(int32_t id)
+{
+    static std::unordered_map<int32_t, std::string> namesCachedMap;
+    if (namesCachedMap.count(id) > 0)
+        return namesCachedMap[id];
+    
+    std::string name;
+    if (UEVars::customNameByIndex)
+    {
+        name = UEVars::customNameByIndex(id);
+    }
+    else
+    {
+        name = GetNameEntryStr(GetNameEntryByID(id));
+    }
+    
+    if (!name.empty())
+    {
+        namesCachedMap[id] = name;
+    }
 
     return name;
 }
 
-int32 TUObjectArray::GetMaxElements() const
+
+int32_t UE_UObjectArray::GetNumElements() const
 {
-    if (Profile::ObjObjectsPtr == 0)
+    if (UEVars::ObjObjectsPtr == 0)
         return 0;
 
-    return vm_rpm_ptr<int32>((void *)(Profile::ObjObjectsPtr + Profile::offsets.TUObjectArray.NumElements - sizeof(int32)));
+    return vm_rpm_ptr<int32_t>((void *)(UEVars::ObjObjectsPtr + UEVars::offsets.TUObjectArray.NumElements));
 }
 
-int32 TUObjectArray::GetNumElements() const
-{
-    if (Profile::ObjObjectsPtr == 0)
-        return 0;
-
-    return vm_rpm_ptr<int32>((void *)(Profile::ObjObjectsPtr + Profile::offsets.TUObjectArray.NumElements));
-}
-
-uint8 *TUObjectArray::GetObjectPtr(int32 id) const
+uint8_t *UE_UObjectArray::GetObjectPtr(int32_t id) const
 {
     if (id < 0 || id >= GetNumElements() || !Objects)
         return nullptr;
-
-    if (!Profile::isUsingFNamePool)
+    
+    if (UEVars::customObjectByIndex)
     {
-        return vm_rpm_ptr<uint8 *>((void *)((uintptr_t)Objects + (id * Profile::offsets.FUObjectItem.Size)));
+        return UEVars::customObjectByIndex(id);
     }
-
-    const int32 NumElementsPerChunk = 64 * 1024;
-    const int32 chunkIndex = id / NumElementsPerChunk;
-    const int32 withinChunkIndex = id % NumElementsPerChunk;
-
+    
+    if (!UEVars::isUsingFNamePool)
+    {
+        return vm_rpm_ptr<uint8_t *>((void *)((uintptr_t)Objects + (id * UEVars::offsets.FUObjectItem.Size) + UEVars::offsets.FUObjectItem.Object));
+    }
+    
+    const int32_t NumElementsPerChunk = 64 * 1024;
+    const int32_t chunkIndex = id / NumElementsPerChunk;
+    const int32_t withinChunkIndex = id % NumElementsPerChunk;
+    
     // if (chunkIndex >= NumChunks) return nullptr;
-
-    uint8 *chunk = vm_rpm_ptr<uint8 *>(Objects + chunkIndex);
+    
+    uint8_t *chunk = vm_rpm_ptr<uint8_t *>(Objects + chunkIndex);
     if (!chunk)
         return nullptr;
-
-    return vm_rpm_ptr<uint8 *>(chunk + (withinChunkIndex * Profile::offsets.FUObjectItem.Size));
+    
+    return vm_rpm_ptr<uint8_t *>(chunk + (withinChunkIndex * UEVars::offsets.FUObjectItem.Size)  + UEVars::offsets.FUObjectItem.Object);
 }
 
-UE_UObject TUObjectArray::FindObject(const std::string &name) const
+void UE_UObjectArray::ForEachObject(const std::function<bool(uint8_t *)> &callback) const
 {
-    for (int32 i = 0; i < GetNumElements(); i++)
+    for (int32_t i = 0; i < GetNumElements(); i++)
     {
-        UE_UObject object = GetObjectPtr(i);
-        if (object && object.GetFullName() == name)
-        {
-            return object;
-        }
-    }
-    return nullptr;
-}
-
-void TUObjectArray::ForEachObject(std::function<void(uint8 *)> callback) const
-{
-    for (int32 i = 0; i < GetNumElements(); i++)
-    {
-        uint8 *object = GetObjectPtr(i);
+        uint8_t *object = GetObjectPtr(i);
         if (!object) continue;
 
-        callback(object);
+        if (callback(object)) return;
     }
 }
 
-void TUObjectArray::ForEachObjectOfClass(const UE_UClass cmp, std::function<bool(uint8 *)> callback) const
+void UE_UObjectArray::ForEachObjectOfClass(const UE_UClass &cmp, const std::function<bool(uint8_t *)> &callback) const
 {
-    for (int32 i = 0; i < GetNumElements(); i++)
+    for (int32_t i = 0; i < GetNumElements(); i++)
     {
         UE_UObject object = GetObjectPtr(i);
         if (object && object.IsA(cmp) && object.GetName().find("_Default") == std::string::npos)
@@ -161,9 +211,9 @@ void TUObjectArray::ForEachObjectOfClass(const UE_UClass cmp, std::function<bool
     }
 }
 
-bool TUObjectArray::IsObject(UE_UObject address) const
+bool UE_UObjectArray::IsObject(const UE_UObject &address) const
 {
-    for (int32 i = 0; i < GetNumElements(); i++)
+    for (int32_t i = 0; i < GetNumElements(); i++)
     {
         UE_UObject object = GetObjectPtr(i);
         if (address == object) return true;
@@ -171,38 +221,51 @@ bool TUObjectArray::IsObject(UE_UObject address) const
     return false;
 }
 
+int UE_FName::GetNumber() const
+{
+    if (!object || UEVars::isUsingOutlineNumberName)
+        return 0;
+    
+    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.FName.Number);
+}
+
 std::string UE_FName::GetName() const
 {
     if (!object)
         return "";
-
-    int32 index = 0;
-    if (!vm_rpm_ptr(object, &index, sizeof(int32)) && index < 0)
+    
+    int32_t index = 0;
+    if (!vm_rpm_ptr(object, &index, sizeof(int32_t)) && index < 0)
         return "";
-
-    auto name = GetNameByID(index);
+    
+    std::string name = UE_GetNameByID(index);
     if (name.empty())
         return "";
-
-    int32 number = vm_rpm_ptr<int32>(object + Profile::offsets.FName.Number);
-    if (number > 0)
+    
+    if (!UEVars::isUsingOutlineNumberName)
     {
-        name += '_' + std::to_string(number);
+        int32_t number = GetNumber();
+        if (number > 0)
+        {
+            name += '_' + std::to_string(number-1);
+        }
     }
+    
     auto pos = name.rfind('/');
     if (pos != std::string::npos)
     {
         name = name.substr(pos + 1);
     }
+    
     return name;
 }
 
-int32 UE_UObject::GetIndex() const
+int32_t UE_UObject::GetIndex() const
 {
     if (!object)
         return -1;
 
-    return vm_rpm_ptr<int32>(object + Profile::offsets.UObject.InternalIndex);
+    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.UObject.InternalIndex);
 }
 
 UE_UClass UE_UObject::GetClass() const
@@ -210,7 +273,7 @@ UE_UClass UE_UObject::GetClass() const
     if (!object)
         return nullptr;
 
-    return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.UObject.ClassPrivate);
+    return vm_rpm_ptr<UE_UClass>(object + UEVars::offsets.UObject.ClassPrivate);
 }
 
 UE_UObject UE_UObject::GetOuter() const
@@ -218,7 +281,7 @@ UE_UObject UE_UObject::GetOuter() const
     if (!object)
         return nullptr;
 
-    return vm_rpm_ptr<UE_UObject>(object + Profile::offsets.UObject.OuterPrivate);
+    return vm_rpm_ptr<UE_UObject>(object + UEVars::offsets.UObject.OuterPrivate);
 }
 
 UE_UObject UE_UObject::GetPackageObject() const
@@ -239,7 +302,7 @@ std::string UE_UObject::GetName() const
     if (!object)
         return "";
 
-    auto fname = UE_FName(object + Profile::offsets.UObject.NamePrivate);
+    auto fname = UE_FName(object + UEVars::offsets.UObject.NamePrivate);
     return fname.GetName();
 }
 
@@ -256,6 +319,23 @@ std::string UE_UObject::GetFullName() const
     UE_UClass objectClass = GetClass();
     std::string name = objectClass.GetName() + " " + temp + GetName();
     return name;
+}
+
+std::string UE_UObject::GetCppTypeName() const
+{
+    if (!object)
+        return "";
+
+    if (IsA<UE_UEnum>())
+    {
+        return "enum";
+    }
+    else if (IsA<UE_UClass>())
+    {
+        return "class";
+    }
+
+    return  "struct";
 }
 
 std::string UE_UObject::GetCppName() const
@@ -276,6 +356,11 @@ std::string UE_UObject::GetCppName() const
             else if (c == UE_UObject::StaticClass())
             {
                 name = "U";
+                break;
+            }
+            else if (c == UE_UInterface::StaticClass())
+            {
+                name = "I";
                 break;
             }
         }
@@ -307,13 +392,19 @@ bool UE_UObject::IsA(UE_UClass cmp) const
 
 UE_UClass UE_UObject::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.Object"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.Object");
+    return obj;
+}
+
+UE_UClass UE_UInterface::StaticClass()
+{
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.Interface");
     return obj;
 }
 
 UE_UClass UE_AActor::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class Engine.Actor"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class Engine.Actor");
     return obj;
 }
 
@@ -322,12 +413,12 @@ UE_UField UE_UField::GetNext() const
     if (!object)
         return nullptr;
 
-    return vm_rpm_ptr<UE_UField>(object + Profile::offsets.UField.Next);
+    return vm_rpm_ptr<UE_UField>(object + UEVars::offsets.UField.Next);
 }
 
 UE_UClass UE_UField::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.Field"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.Field");
     return obj;
 }
 
@@ -336,22 +427,22 @@ std::string IUProperty::GetName() const
     return ((UE_UProperty *)(this->prop))->GetName();
 }
 
-int32 IUProperty::GetArrayDim() const
+int32_t IUProperty::GetArrayDim() const
 {
     return ((UE_UProperty *)(this->prop))->GetArrayDim();
 }
 
-int32 IUProperty::GetSize() const
+int32_t IUProperty::GetSize() const
 {
     return ((UE_UProperty *)(this->prop))->GetSize();
 }
 
-int32 IUProperty::GetOffset() const
+int32_t IUProperty::GetOffset() const
 {
     return ((UE_UProperty *)(this->prop))->GetOffset();
 }
 
-uint64 IUProperty::GetPropertyFlags() const
+uint64_t IUProperty::GetPropertyFlags() const
 {
     return ((UE_UProperty *)(this->prop))->GetPropertyFlags();
 }
@@ -361,29 +452,29 @@ std::pair<PropertyType, std::string> IUProperty::GetType() const
     return ((UE_UProperty *)(this->prop))->GetType();
 }
 
-uint8 IUProperty::GetFieldMask() const
+uint8_t IUProperty::GetFieldMask() const
 {
     return ((UE_UBoolProperty *)(this->prop))->GetFieldMask();
 }
 
-int32 UE_UProperty::GetArrayDim() const
+int32_t UE_UProperty::GetArrayDim() const
 {
-    return vm_rpm_ptr<int32>(object + Profile::offsets.UProperty.ArrayDim);
+    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.UProperty.ArrayDim);
 }
 
-int32 UE_UProperty::GetSize() const
+int32_t UE_UProperty::GetSize() const
 {
-    return vm_rpm_ptr<int32>(object + Profile::offsets.UProperty.ElementSize);
+    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.UProperty.ElementSize);
 }
 
-int32 UE_UProperty::GetOffset() const
+int32_t UE_UProperty::GetOffset() const
 {
-    return vm_rpm_ptr<int32>(object + Profile::offsets.UProperty.Offset_Internal);
+    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.UProperty.Offset_Internal);
 }
 
-uint64 UE_UProperty::GetPropertyFlags() const
+uint64_t UE_UProperty::GetPropertyFlags() const
 {
-    return vm_rpm_ptr<uint64>(object + Profile::offsets.UProperty.PropertyFlags);
+    return vm_rpm_ptr<uint64_t>(object + UEVars::offsets.UProperty.PropertyFlags);
 }
 
 std::pair<PropertyType, std::string> UE_UProperty::GetType() const
@@ -503,58 +594,83 @@ IUProperty UE_UProperty::GetInterface() const { return IUProperty(this); }
 
 UE_UClass UE_UProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.Property"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.Property");
     return obj;
 }
 
 UE_UStruct UE_UStruct::GetSuper() const
 {
-    return vm_rpm_ptr<UE_UStruct>(object + Profile::offsets.UStruct.SuperStruct);
+    return vm_rpm_ptr<UE_UStruct>(object + UEVars::offsets.UStruct.SuperStruct);
 }
 
 UE_FField UE_UStruct::GetChildProperties() const
 {
-    if (Profile::offsets.UStruct.ChildProperties > 0)
+    if (UEVars::offsets.UStruct.ChildProperties > 0)
     {
-        return vm_rpm_ptr<UE_FField>(object + Profile::offsets.UStruct.ChildProperties);
+        return vm_rpm_ptr<UE_FField>(object + UEVars::offsets.UStruct.ChildProperties);
     }
     return {};
 }
 
 UE_UField UE_UStruct::GetChildren() const
 {
-    return vm_rpm_ptr<UE_UField>(object + Profile::offsets.UStruct.Children);
+    if (UEVars::offsets.UStruct.Children > 0)
+    {
+        return vm_rpm_ptr<UE_UField>(object + UEVars::offsets.UStruct.Children);
+    }
+    return {};
 }
 
-int32 UE_UStruct::GetSize() const
+int32_t UE_UStruct::GetSize() const
 {
-    return vm_rpm_ptr<int32>(object + Profile::offsets.UStruct.PropertiesSize);
+    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.UStruct.PropertiesSize);
 }
 
 UE_UClass UE_UStruct::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.Struct"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.Struct");
     return obj;
+}
+
+
+UE_FField UE_UStruct::FindChildProp(const std::string &name) const
+{
+    for (auto prop = GetChildProperties(); prop; prop = prop.GetNext())
+    {
+        if (prop.GetName() == name)
+            return prop;
+    }
+    return {};
+}
+
+UE_UField UE_UStruct::FindChild(const std::string &name) const
+{
+    for (auto prop = GetChildren(); prop; prop = prop.GetNext())
+    {
+        if (prop.GetName() == name)
+            return prop;
+    }
+    return {};
 }
 
 uintptr_t UE_UFunction::GetFunc() const
 {
-    return vm_rpm_ptr<uintptr_t>(object + Profile::offsets.UFunction.Func);
+    return vm_rpm_ptr<uintptr_t>(object + UEVars::offsets.UFunction.Func);
 }
 
-int8 UE_UFunction::GetNumParams() const
+int8_t UE_UFunction::GetNumParams() const
 {
-    return vm_rpm_ptr<int8>(object + Profile::offsets.UFunction.NumParams);
+    return vm_rpm_ptr<int8_t>(object + UEVars::offsets.UFunction.NumParams);
 }
 
-int16 UE_UFunction::GetParamSize() const
+int16_t UE_UFunction::GetParamSize() const
 {
-    return vm_rpm_ptr<int16>(object + Profile::offsets.UFunction.ParamSize);
+    return vm_rpm_ptr<int16_t>(object + UEVars::offsets.UFunction.ParamSize);
 }
 
-uint32 UE_UFunction::GetFunctionEFlags() const
+uint32_t UE_UFunction::GetFunctionEFlags() const
 {
-    return vm_rpm_ptr<uint32>(object + Profile::offsets.UFunction.EFunctionFlags);
+    return vm_rpm_ptr<uint32_t>(object + UEVars::offsets.UFunction.EFunctionFlags);
 }
 
 std::string UE_UFunction::GetFunctionFlags() const
@@ -697,30 +813,38 @@ std::string UE_UFunction::GetFunctionFlags() const
 
 UE_UClass UE_UFunction::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.Function"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.Function");
     return obj;
 }
 
 UE_UClass UE_UScriptStruct::StaticClass()
 {
-    static UE_UClass obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.ScriptStruct"));
+    static UE_UClass obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.ScriptStruct");
     return obj;
 }
 
 UE_UClass UE_UClass::StaticClass()
 {
-    static UE_UClass obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.Class"));
+    static UE_UClass obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.Class");
     return obj;
 }
 
 TArray UE_UEnum::GetNames() const
 {
-    return vm_rpm_ptr<TArray>(object + Profile::offsets.UEnum.Names);
+    return vm_rpm_ptr<TArray>(object + UEVars::offsets.UEnum.Names);
+}
+
+std::string UE_UEnum::GetName() const
+{
+    std::string name = UE_UField::GetName();
+    if(!name.empty() && name[0] != 'E')
+        return "E" + name;
+    return name;
 }
 
 UE_UClass UE_UEnum::StaticClass()
 {
-    static UE_UClass obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.Enum"));
+    static UE_UClass obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.Enum");
     return obj;
 }
 
@@ -728,13 +852,13 @@ std::string UE_UDoubleProperty::GetTypeStr() const { return "double"; }
 
 UE_UClass UE_UDoubleProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.DoubleProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.DoubleProperty");
     return obj;
 }
 
 UE_UStruct UE_UStructProperty::GetStruct() const
 {
-    return vm_rpm_ptr<UE_UStruct>(object + Profile::offsets.UProperty.Size);
+    return vm_rpm_ptr<UE_UStruct>(object + UEVars::offsets.UProperty.Size);
 }
 
 std::string UE_UStructProperty::GetTypeStr() const
@@ -744,7 +868,7 @@ std::string UE_UStructProperty::GetTypeStr() const
 
 UE_UClass UE_UStructProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.StructProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.StructProperty");
     return obj;
 }
 
@@ -752,45 +876,45 @@ std::string UE_UNameProperty::GetTypeStr() const { return "struct FName"; }
 
 UE_UClass UE_UNameProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.NameProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.NameProperty");
     return obj;
 }
 
 UE_UClass UE_UObjectPropertyBase::GetPropertyClass() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.UProperty.Size);
+    return vm_rpm_ptr<UE_UClass>(object + UEVars::offsets.UProperty.Size);
 }
 
 std::string UE_UObjectPropertyBase::GetTypeStr() const
 {
-    return "struct " + GetPropertyClass().GetCppName() + "*";
+    return GetPropertyClass().GetCppTypeName() + " " + GetPropertyClass().GetCppName() + "*";
 }
 
 UE_UClass UE_UObjectPropertyBase::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.ObjectPropertyBase"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.ObjectPropertyBase");
     return obj;
 }
 
 UE_UClass UE_UObjectProperty::GetPropertyClass() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.UProperty.Size);
+    return vm_rpm_ptr<UE_UClass>(object + UEVars::offsets.UProperty.Size);
 }
 
 std::string UE_UObjectProperty::GetTypeStr() const
 {
-    return "struct " + GetPropertyClass().GetCppName() + "*";
+    return GetPropertyClass().GetCppTypeName() + " " + GetPropertyClass().GetCppName() + "*";
 }
 
 UE_UClass UE_UObjectProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.ObjectProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.ObjectProperty");
     return obj;
 }
 
 UE_UProperty UE_UArrayProperty::GetInner() const
 {
-    return vm_rpm_ptr<UE_UProperty>(object + Profile::offsets.UProperty.Size);
+    return vm_rpm_ptr<UE_UProperty>(object + UEVars::offsets.UProperty.Size);
 }
 
 std::string UE_UArrayProperty::GetTypeStr() const
@@ -800,13 +924,13 @@ std::string UE_UArrayProperty::GetTypeStr() const
 
 UE_UClass UE_UArrayProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.ArrayProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.ArrayProperty");
     return obj;
 }
 
 UE_UEnum UE_UByteProperty::GetEnum() const
 {
-    return vm_rpm_ptr<UE_UEnum>(object + Profile::offsets.UProperty.Size);
+    return vm_rpm_ptr<UE_UEnum>(object + UEVars::offsets.UProperty.Size);
 }
 
 std::string UE_UByteProperty::GetTypeStr() const
@@ -814,18 +938,18 @@ std::string UE_UByteProperty::GetTypeStr() const
     auto e = GetEnum();
     if (e)
         return "enum class " + e.GetName();
-    return "char";
+    return "uint8_t";
 }
 
 UE_UClass UE_UByteProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.ByteProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.ByteProperty");
     return obj;
 }
 
-uint8 UE_UBoolProperty::GetFieldMask() const
+uint8_t UE_UBoolProperty::GetFieldMask() const
 {
-    return vm_rpm_ptr<uint8>(object + Profile::offsets.UProperty.Size + 3);
+    return vm_rpm_ptr<uint8_t>(object + UEVars::offsets.UProperty.Size + 3);
 }
 
 std::string UE_UBoolProperty::GetTypeStr() const
@@ -834,12 +958,12 @@ std::string UE_UBoolProperty::GetTypeStr() const
     {
         return "bool";
     }
-    return "char";
+    return "uint8_t";
 }
 
 UE_UClass UE_UBoolProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.BoolProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.BoolProperty");
     return obj;
 }
 
@@ -847,7 +971,7 @@ std::string UE_UFloatProperty::GetTypeStr() const { return "float"; }
 
 UE_UClass UE_UFloatProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.FloatProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.FloatProperty");
     return obj;
 }
 
@@ -855,7 +979,7 @@ std::string UE_UIntProperty::GetTypeStr() const { return "int"; }
 
 UE_UClass UE_UIntProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.IntProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.IntProperty");
     return obj;
 }
 
@@ -863,7 +987,7 @@ std::string UE_UInt16Property::GetTypeStr() const { return "int16_t"; }
 
 UE_UClass UE_UInt16Property::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.Int16Property"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.Int16Property");
     return obj;
 }
 
@@ -871,7 +995,7 @@ std::string UE_UInt64Property::GetTypeStr() const { return "int64_t"; }
 
 UE_UClass UE_UInt64Property::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.Int64Property"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.Int64Property");
     return obj;
 }
 
@@ -879,7 +1003,7 @@ std::string UE_UInt8Property::GetTypeStr() const { return "uint8_t"; }
 
 UE_UClass UE_UInt8Property::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.Int8Property"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.Int8Property");
     return obj;
 }
 
@@ -887,7 +1011,7 @@ std::string UE_UUInt16Property::GetTypeStr() const { return "uint16_t"; }
 
 UE_UClass UE_UUInt16Property::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.UInt16Property"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.UInt16Property");
     return obj;
 }
 
@@ -895,7 +1019,7 @@ std::string UE_UUInt32Property::GetTypeStr() const { return "uint32_t"; }
 
 UE_UClass UE_UUInt32Property::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.UInt32Property"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.UInt32Property");
     return obj;
 }
 
@@ -903,7 +1027,7 @@ std::string UE_UInt32Property::GetTypeStr() const { return "int32_t"; }
 
 UE_UClass UE_UInt32Property::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.Int32Property"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.Int32Property");
     return obj;
 }
 
@@ -911,7 +1035,7 @@ std::string UE_UUInt64Property::GetTypeStr() const { return "uint64_t"; }
 
 UE_UClass UE_UUInt64Property::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.UInt64Property"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.UInt64Property");
     return obj;
 }
 
@@ -919,7 +1043,7 @@ std::string UE_UTextProperty::GetTypeStr() const { return "struct FText"; }
 
 UE_UClass UE_UTextProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.TextProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.TextProperty");
     return obj;
 }
 
@@ -927,45 +1051,59 @@ std::string UE_UStrProperty::GetTypeStr() const { return "struct FString"; }
 
 UE_UClass UE_UStrProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.StrProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.StrProperty");
     return obj;
 }
 
-UE_UClass UE_UEnumProperty::GetEnum() const
+UE_UProperty UE_UEnumProperty::GetUnderlayingProperty() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.UProperty.Size + sizeof(void *));
+    return vm_rpm_ptr<UE_UProperty>(object + UEVars::offsets.UProperty.Size);
+}
+
+UE_UEnum UE_UEnumProperty::GetEnum() const
+{
+    return vm_rpm_ptr<UE_UEnum>(object + UEVars::offsets.UProperty.Size + sizeof(void *));
 }
 
 std::string UE_UEnumProperty::GetTypeStr() const
 {
-    return "enum class " + GetEnum().GetName();
+    if (GetEnum())
+        return "enum class " + GetEnum().GetName();
+    
+    return "enum class " + GetUnderlayingProperty().GetType().second;
 }
 
 UE_UClass UE_UEnumProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.EnumProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.EnumProperty");
     return obj;
 }
 
 UE_UClass UE_UClassProperty::GetMetaClass() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.UProperty.Size + sizeof(void *));
+    return vm_rpm_ptr<UE_UClass>(object + UEVars::offsets.UProperty.Size + sizeof(void *));
 }
 
 std::string UE_UClassProperty::GetTypeStr() const
 {
-    return "struct " + GetMetaClass().GetCppName() + "*";
+    return "class " + GetMetaClass().GetCppName() + "*";
 }
 
 UE_UClass UE_UClassProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.ClassProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.ClassProperty");
     return obj;
+}
+
+std::string UE_USoftClassProperty::GetTypeStr() const
+{
+    auto className = GetMetaClass() ? GetMetaClass().GetCppName() : GetPropertyClass().GetCppName();
+    return "struct TSoftClassPtr<class " + className + "*>";
 }
 
 UE_UProperty UE_USetProperty::GetElementProp() const
 {
-    return vm_rpm_ptr<UE_UProperty>(object + Profile::offsets.UProperty.Size);
+    return vm_rpm_ptr<UE_UProperty>(object + UEVars::offsets.UProperty.Size);
 }
 
 std::string UE_USetProperty::GetTypeStr() const
@@ -975,18 +1113,18 @@ std::string UE_USetProperty::GetTypeStr() const
 
 UE_UClass UE_USetProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.SetProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.SetProperty");
     return obj;
 }
 
 UE_UProperty UE_UMapProperty::GetKeyProp() const
 {
-    return vm_rpm_ptr<UE_UProperty>(object + Profile::offsets.UProperty.Size);
+    return vm_rpm_ptr<UE_UProperty>(object + UEVars::offsets.UProperty.Size);
 }
 
 UE_UProperty UE_UMapProperty::GetValueProp() const
 {
-    return vm_rpm_ptr<UE_UProperty>(object + Profile::offsets.UProperty.Size + sizeof(void *));
+    return vm_rpm_ptr<UE_UProperty>(object + UEVars::offsets.UProperty.Size + sizeof(void *));
 }
 
 std::string UE_UMapProperty::GetTypeStr() const
@@ -996,13 +1134,13 @@ std::string UE_UMapProperty::GetTypeStr() const
 
 UE_UClass UE_UMapProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.MapProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.MapProperty");
     return obj;
 }
 
 UE_UProperty UE_UInterfaceProperty::GetInterfaceClass() const
 {
-    return vm_rpm_ptr<UE_UProperty>(object + Profile::offsets.UProperty.Size);
+    return vm_rpm_ptr<UE_UProperty>(object + UEVars::offsets.UProperty.Size);
 }
 
 std::string UE_UInterfaceProperty::GetTypeStr() const
@@ -1012,7 +1150,7 @@ std::string UE_UInterfaceProperty::GetTypeStr() const
 
 UE_UClass UE_UInterfaceProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.InterfaceProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.InterfaceProperty");
     return obj;
 }
 
@@ -1023,7 +1161,7 @@ std::string UE_UMulticastDelegateProperty::GetTypeStr() const
 
 UE_UClass UE_UMulticastDelegateProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.MulticastDelegateProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.MulticastDelegateProperty");
     return obj;
 }
 
@@ -1034,7 +1172,7 @@ std::string UE_UWeakObjectProperty::GetTypeStr() const
 
 UE_UClass UE_UWeakObjectProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.WeakObjectProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.WeakObjectProperty");
     return obj;
 }
 
@@ -1045,7 +1183,7 @@ std::string UE_ULazyObjectProperty::GetTypeStr() const
 
 UE_UClass UE_ULazyObjectProperty::StaticClass()
 {
-    static auto obj = (UE_UClass)(Profile::ObjObjects.FindObject("Class CoreUObject.LazyObjectProperty"));
+    static auto obj = UEVars::ObjObjects.FindObject<UE_UClass>("Class CoreUObject.LazyObjectProperty");
     return obj;
 }
 
@@ -1057,13 +1195,18 @@ std::string UE_FFieldClass::GetName() const
 
 UE_FField UE_FField::GetNext() const
 {
-    return vm_rpm_ptr<UE_FField>(object + Profile::offsets.FField.Next);
+    return vm_rpm_ptr<UE_FField>(object + UEVars::offsets.FField.Next);
 }
 
 std::string UE_FField::GetName() const
 {
-    auto name = UE_FName(object + Profile::offsets.FField.NamePrivate);
+    auto name = UE_FName(object + UEVars::offsets.FField.NamePrivate);
     return name.GetName();
+}
+
+UE_FFieldClass UE_FField::GetClass() const
+{
+    return vm_rpm_ptr<UE_FFieldClass>(object + UEVars::offsets.FField.ClassPrivate);
 }
 
 std::string IFProperty::GetName() const
@@ -1071,19 +1214,19 @@ std::string IFProperty::GetName() const
     return ((UE_FProperty *)prop)->GetName();
 }
 
-int32 IFProperty::GetArrayDim() const
+int32_t IFProperty::GetArrayDim() const
 {
     return ((UE_FProperty *)prop)->GetArrayDim();
 }
 
-int32 IFProperty::GetSize() const { return ((UE_FProperty *)prop)->GetSize(); }
+int32_t IFProperty::GetSize() const { return ((UE_FProperty *)prop)->GetSize(); }
 
-int32 IFProperty::GetOffset() const
+int32_t IFProperty::GetOffset() const
 {
     return ((UE_FProperty *)prop)->GetOffset();
 }
 
-uint64 IFProperty::GetPropertyFlags() const
+uint64_t IFProperty::GetPropertyFlags() const
 {
     return ((UE_FProperty *)prop)->GetPropertyFlags();
 }
@@ -1093,210 +1236,217 @@ std::pair<PropertyType, std::string> IFProperty::GetType() const
     return ((UE_FProperty *)prop)->GetType();
 }
 
-uint8 IFProperty::GetFieldMask() const
+uint8_t IFProperty::GetFieldMask() const
 {
     return ((UE_FBoolProperty *)prop)->GetFieldMask();
 }
 
-int32 UE_FProperty::GetArrayDim() const
+int32_t UE_FProperty::GetArrayDim() const
 {
-    return vm_rpm_ptr<int32>(object + Profile::offsets.FProperty.ArrayDim);
+    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.FProperty.ArrayDim);
 }
 
-int32 UE_FProperty::GetSize() const
+int32_t UE_FProperty::GetSize() const
 {
-    return vm_rpm_ptr<int32>(object + Profile::offsets.FProperty.ElementSize);
+    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.FProperty.ElementSize);
 }
 
-int32 UE_FProperty::GetOffset() const
+int32_t UE_FProperty::GetOffset() const
 {
-    return vm_rpm_ptr<int32>(object + Profile::offsets.FProperty.Offset_Internal);
+    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.FProperty.Offset_Internal);
 }
 
-uint64 UE_FProperty::GetPropertyFlags() const
+uint64_t UE_FProperty::GetPropertyFlags() const
 {
-    return vm_rpm_ptr<uint64>(object + Profile::offsets.FProperty.PropertyFlags);
+    return vm_rpm_ptr<uint64_t>(object + UEVars::offsets.FProperty.PropertyFlags);
 }
 
 type UE_FProperty::GetType() const
 {
-    auto objectClass = vm_rpm_ptr<UE_FFieldClass>(object + Profile::offsets.FField.ClassPrivate);
+    auto objectClass = GetClass();
     type type = {PropertyType::Unknown, objectClass.GetName()};
-
+    
     auto &str = type.second;
     auto hash = Hash(str.c_str(), str.size());
     switch (hash)
     {
-    case HASH("StructProperty"):
-    {
-        auto obj = this->Cast<UE_FStructProperty>();
-        type = {PropertyType::StructProperty, obj.GetTypeStr()};
-        break;
+        case HASH("StructProperty"):
+        {
+            auto obj = this->Cast<UE_FStructProperty>();
+            type = {PropertyType::StructProperty, obj.GetTypeStr()};
+            break;
+        }
+        case HASH("ObjectProperty"):
+        {
+            auto obj = this->Cast<UE_FObjectPropertyBase>();
+            type = {PropertyType::ObjectProperty, obj.GetTypeStr()};
+            break;
+        }
+        case HASH("SoftObjectProperty"):
+        {
+            auto obj = this->Cast<UE_FObjectPropertyBase>();
+            type = {PropertyType::SoftObjectProperty, "struct TSoftObjectPtr<" + obj.GetPropertyClass().GetCppName() + ">"};
+            break;
+        }
+        case HASH("FloatProperty"):
+        {
+            type = {PropertyType::FloatProperty, "float"};
+            break;
+        }
+        case HASH("ByteProperty"):
+        {
+            auto obj = this->Cast<UE_FByteProperty>();
+            type = {PropertyType::ByteProperty, obj.GetTypeStr()};
+            break;
+        }
+        case HASH("BoolProperty"):
+        {
+            auto obj = this->Cast<UE_FBoolProperty>();
+            type = {PropertyType::BoolProperty, obj.GetTypeStr()};
+            break;
+        }
+        case HASH("IntProperty"):
+        {
+            type = {PropertyType::IntProperty, "int32_t"};
+            break;
+        }
+        case HASH("Int8Property"):
+        {
+            type = {PropertyType::Int8Property, "int8_t"};
+            break;
+        }
+        case HASH("Int16Property"):
+        {
+            type = {PropertyType::Int16Property, "int16_t"};
+            break;
+        }
+        case HASH("Int64Property"):
+        {
+            type = {PropertyType::Int64Property, "int64_t"};
+            break;
+        }
+        case HASH("UInt16Property"):
+        {
+            type = {PropertyType::UInt16Property, "uint16_t"};
+            break;
+        }
+        case HASH("Int32Property"):
+        {
+            type = {PropertyType::Int32Property, "int32_t"};
+            break;
+        }
+        case HASH("UInt32Property"):
+        {
+            type = {PropertyType::UInt32Property, "uint32_t"};
+            break;
+        }
+        case HASH("UInt64Property"):
+        {
+            type = {PropertyType::UInt64Property, "uint64_t"};
+            break;
+        }
+        case HASH("NameProperty"):
+        {
+            type = {PropertyType::NameProperty, "struct FName"};
+            break;
+        }
+        case HASH("DelegateProperty"):
+        {
+            type = {PropertyType::DelegateProperty, "struct FDelegate"};
+            break;
+        }
+        case HASH("SetProperty"):
+        {
+            auto obj = this->Cast<UE_FSetProperty>();
+            type = {PropertyType::SetProperty, obj.GetTypeStr()};
+            break;
+        }
+        case HASH("ArrayProperty"):
+        {
+            auto obj = this->Cast<UE_FArrayProperty>();
+            type = {PropertyType::ArrayProperty, obj.GetTypeStr()};
+            break;
+        }
+        case HASH("WeakObjectProperty"):
+        {
+            auto obj = this->Cast<UE_FStructProperty>();
+            type = {PropertyType::WeakObjectProperty, "struct TWeakObjectPtr<" + obj.GetTypeStr() + ">"};
+            break;
+        }
+        case HASH("LazyObjectProperty"):
+        {
+            auto obj = this->Cast<UE_FStructProperty>();
+            type = {PropertyType::LazyObjectProperty, "struct TLazyObjectPtr<" + obj.GetTypeStr() + ">"};
+            break;
+        }
+        case HASH("StrProperty"):
+        {
+            type = {PropertyType::StrProperty, "struct FString"};
+            break;
+        }
+        case HASH("TextProperty"):
+        {
+            type = {PropertyType::TextProperty, "struct FText"};
+            break;
+        }
+        case HASH("MulticastSparseDelegateProperty"):
+        {
+            type = {PropertyType::MulticastSparseDelegateProperty, "struct FMulticastSparseDelegate"};
+            break;
+        }
+        case HASH("EnumProperty"):
+        {
+            auto obj = this->Cast<UE_FEnumProperty>();
+            type = {PropertyType::EnumProperty, obj.GetTypeStr()};
+            break;
+        }
+        case HASH("DoubleProperty"):
+        {
+            type = {PropertyType::DoubleProperty, "double"};
+            break;
+        }
+        case HASH("MulticastDelegateProperty"):
+        {
+            type = {PropertyType::MulticastDelegateProperty, "FMulticastDelegate"};
+            break;
+        }
+        case HASH("ClassProperty"):
+        {
+            auto obj = this->Cast<UE_FClassProperty>();
+            type = {PropertyType::ClassProperty, obj.GetTypeStr()};
+            break;
+        }
+        case HASH("MulticastInlineDelegateProperty"):
+        {
+            type = {PropertyType::MulticastDelegateProperty, "struct FMulticastInlineDelegate"};
+            break;
+        }
+        case HASH("MapProperty"):
+        {
+            auto obj = this->Cast<UE_FMapProperty>();
+            type = {PropertyType::MapProperty, obj.GetTypeStr()};
+            break;
+        }
+        case HASH("InterfaceProperty"):
+        {
+            auto obj = this->Cast<UE_FInterfaceProperty>();
+            type = {PropertyType::InterfaceProperty, obj.GetTypeStr()};
+            break;
+        }
+        case HASH("FieldPathProperty"):
+        {
+            auto obj = this->Cast<UE_FFieldPathProperty>();
+            type = {PropertyType::FieldPathProperty, obj.GetTypeStr()};
+            break;
+        }
+        case HASH("SoftClassProperty"):
+        {
+            auto obj = this->Cast<UE_FSoftClassProperty>();
+            type = {PropertyType::SoftClassProperty, obj.GetTypeStr()};
+            break;
+        }
     }
-    case HASH("ObjectProperty"):
-    {
-        auto obj = this->Cast<UE_FObjectPropertyBase>();
-        type = {PropertyType::ObjectProperty, obj.GetTypeStr()};
-        break;
-    }
-    case HASH("SoftObjectProperty"):
-    {
-        auto obj = this->Cast<UE_FObjectPropertyBase>();
-        type = {PropertyType::SoftObjectProperty, "struct TSoftObjectPtr<" + obj.GetPropertyClass().GetCppName() + ">"};
-        break;
-    }
-    case HASH("FloatProperty"):
-    {
-        type = {PropertyType::FloatProperty, "float"};
-        break;
-    }
-    case HASH("ByteProperty"):
-    {
-        auto obj = this->Cast<UE_FByteProperty>();
-        type = {PropertyType::ByteProperty, obj.GetTypeStr()};
-        break;
-    }
-    case HASH("BoolProperty"):
-    {
-        auto obj = this->Cast<UE_FBoolProperty>();
-        type = {PropertyType::BoolProperty, obj.GetTypeStr()};
-        break;
-    }
-    case HASH("IntProperty"):
-    {
-        type = {PropertyType::IntProperty, "int32_t"};
-        break;
-    }
-    case HASH("Int8Property"):
-    {
-        type = {PropertyType::Int8Property, "int8_t"};
-        break;
-    }
-    case HASH("Int16Property"):
-    {
-        type = {PropertyType::Int16Property, "int16_t"};
-        break;
-    }
-    case HASH("Int64Property"):
-    {
-        type = {PropertyType::Int64Property, "int64_t"};
-        break;
-    }
-    case HASH("UInt16Property"):
-    {
-        type = {PropertyType::UInt16Property, "uint16_t"};
-        break;
-    }
-    case HASH("Int32Property"):
-    {
-        type = {PropertyType::Int32Property, "int32_t"};
-        break;
-    }
-    case HASH("UInt32Property"):
-    {
-        type = {PropertyType::UInt32Property, "uint32_t"};
-        break;
-    }
-    case HASH("UInt64Property"):
-    {
-        type = {PropertyType::UInt64Property, "uint64_t"};
-        break;
-    }
-    case HASH("NameProperty"):
-    {
-        type = {PropertyType::NameProperty, "struct FName"};
-        break;
-    }
-    case HASH("DelegateProperty"):
-    {
-        type = {PropertyType::DelegateProperty, "struct FDelegate"};
-        break;
-    }
-    case HASH("SetProperty"):
-    {
-        auto obj = this->Cast<UE_FSetProperty>();
-        type = {PropertyType::SetProperty, obj.GetTypeStr()};
-        break;
-    }
-    case HASH("ArrayProperty"):
-    {
-        auto obj = this->Cast<UE_FArrayProperty>();
-        type = {PropertyType::ArrayProperty, obj.GetTypeStr()};
-        break;
-    }
-    case HASH("WeakObjectProperty"):
-    {
-        auto obj = this->Cast<UE_FStructProperty>();
-        type = {PropertyType::WeakObjectProperty, "struct TWeakObjectPtr<" + obj.GetTypeStr() + ">"};
-        break;
-    }
-    case HASH("StrProperty"):
-    {
-        type = {PropertyType::StrProperty, "struct FString"};
-        break;
-    }
-    case HASH("TextProperty"):
-    {
-        type = {PropertyType::TextProperty, "struct FText"};
-        break;
-    }
-    case HASH("MulticastSparseDelegateProperty"):
-    {
-        type = {PropertyType::MulticastSparseDelegateProperty, "struct FMulticastSparseDelegate"};
-        break;
-    }
-    case HASH("EnumProperty"):
-    {
-        auto obj = this->Cast<UE_FEnumProperty>();
-        type = {PropertyType::EnumProperty, obj.GetTypeStr()};
-        break;
-    }
-    case HASH("DoubleProperty"):
-    {
-        type = {PropertyType::DoubleProperty, "double"};
-        break;
-    }
-    case HASH("MulticastDelegateProperty"):
-    {
-        type = {PropertyType::MulticastDelegateProperty, "FMulticastDelegate"};
-        break;
-    }
-    case HASH("ClassProperty"):
-    {
-        auto obj = this->Cast<UE_FClassProperty>();
-        type = {PropertyType::ClassProperty, obj.GetTypeStr()};
-        break;
-    }
-    case HASH("MulticastInlineDelegateProperty"):
-    {
-        type = {PropertyType::MulticastDelegateProperty, "struct FMulticastInlineDelegate"};
-        break;
-    }
-    case HASH("MapProperty"):
-    {
-        auto obj = this->Cast<UE_FMapProperty>();
-        type = {PropertyType::MapProperty, obj.GetTypeStr()};
-        break;
-    }
-    case HASH("InterfaceProperty"):
-    {
-        auto obj = this->Cast<UE_FInterfaceProperty>();
-        type = {PropertyType::InterfaceProperty, obj.GetTypeStr()};
-        break;
-    }
-    case HASH("FieldPathProperty"):
-    {
-        auto obj = this->Cast<UE_FFieldPathProperty>();
-        type = {PropertyType::FieldPathProperty, obj.GetTypeStr()};
-        break;
-    }
-    case HASH("SoftClassProperty"):
-    {
-        type = {PropertyType::SoftClassProperty, "struct TSoftClassPtr<UObject>"};
-        break;
-    }
-    }
-
+    
     return type;
 }
 
@@ -1304,7 +1454,7 @@ IFProperty UE_FProperty::GetInterface() const { return IFProperty(this); }
 
 UE_UStruct UE_FStructProperty::GetStruct() const
 {
-    return vm_rpm_ptr<UE_UStruct>(object + Profile::offsets.FProperty.Size);
+    return vm_rpm_ptr<UE_UStruct>(object + UEVars::offsets.FProperty.Size);
 }
 
 std::string UE_FStructProperty::GetTypeStr() const
@@ -1314,17 +1464,17 @@ std::string UE_FStructProperty::GetTypeStr() const
 
 UE_UClass UE_FObjectPropertyBase::GetPropertyClass() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.FProperty.Size);
+    return vm_rpm_ptr<UE_UClass>(object + UEVars::offsets.FProperty.Size);
 }
 
 std::string UE_FObjectPropertyBase::GetTypeStr() const
 {
-    return "struct " + GetPropertyClass().GetCppName() + "*";
+    return GetPropertyClass().GetCppTypeName() + " " + GetPropertyClass().GetCppName() + "*";
 }
 
 UE_FProperty UE_FArrayProperty::GetInner() const
 {
-    return vm_rpm_ptr<UE_FProperty>(object + Profile::offsets.FProperty.Size);
+    return vm_rpm_ptr<UE_FProperty>(object + UEVars::offsets.FProperty.Size);
 }
 
 std::string UE_FArrayProperty::GetTypeStr() const
@@ -1334,7 +1484,7 @@ std::string UE_FArrayProperty::GetTypeStr() const
 
 UE_UEnum UE_FByteProperty::GetEnum() const
 {
-    return vm_rpm_ptr<UE_UEnum>(object + Profile::offsets.FProperty.Size);
+    return vm_rpm_ptr<UE_UEnum>(object + UEVars::offsets.FProperty.Size);
 }
 
 std::string UE_FByteProperty::GetTypeStr() const
@@ -1342,27 +1492,27 @@ std::string UE_FByteProperty::GetTypeStr() const
     auto e = GetEnum();
     if (e)
         return "enum class " + e.GetName();
-    return "char";
+    return "uint8_t";
 }
 
-uint8 UE_FBoolProperty::GetFieldSize() const
+uint8_t UE_FBoolProperty::GetFieldSize() const
 {
-    return vm_rpm_ptr<uint8>(object + Profile::offsets.FProperty.Size);
+    return vm_rpm_ptr<uint8_t>(object + UEVars::offsets.FProperty.Size);
 }
 
-uint8 UE_FBoolProperty::GetByteOffset() const
+uint8_t UE_FBoolProperty::GetByteOffset() const
 {
-    return vm_rpm_ptr<uint8>(object + Profile::offsets.FProperty.Size + 1);
+    return vm_rpm_ptr<uint8_t>(object + UEVars::offsets.FProperty.Size + 1);
 }
 
-uint8 UE_FBoolProperty::GetByteMask() const
+uint8_t UE_FBoolProperty::GetByteMask() const
 {
-    return vm_rpm_ptr<uint8>(object + Profile::offsets.FProperty.Size + 2);
+    return vm_rpm_ptr<uint8_t>(object + UEVars::offsets.FProperty.Size + 2);
 }
 
-uint8 UE_FBoolProperty::GetFieldMask() const
+uint8_t UE_FBoolProperty::GetFieldMask() const
 {
-    return vm_rpm_ptr<uint8>(object + Profile::offsets.FProperty.Size + 3);
+    return vm_rpm_ptr<uint8_t>(object + UEVars::offsets.FProperty.Size + 3);
 }
 
 std::string UE_FBoolProperty::GetTypeStr() const
@@ -1371,32 +1521,74 @@ std::string UE_FBoolProperty::GetTypeStr() const
     {
         return "bool";
     }
-    return "char";
+    return "uint8_t";
 }
 
-UE_UClass UE_FEnumProperty::GetEnum() const
+UE_FProperty UE_FEnumProperty::GetUnderlayingProperty() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.FProperty.Size + sizeof(void *));
+    static uint32_t off = 0;
+    if (off == 0) {
+        auto p = vm_rpm_ptr<UE_FProperty>(object + UEVars::offsets.FProperty.Size);
+        if (p && p.GetName() == "UnderlyingType") {
+            off = UEVars::offsets.FProperty.Size;
+        } else {
+            p = vm_rpm_ptr<UE_FProperty>(object + UEVars::offsets.FProperty.Size - sizeof(void*));
+            if (p && p.GetName() == "UnderlyingType") {
+                off = UEVars::offsets.FProperty.Size - sizeof(void*);
+            }
+        }
+        return off == 0 ? nullptr : p;
+    }
+        
+    return vm_rpm_ptr<UE_FProperty>(object + off);
+}
+
+UE_UEnum UE_FEnumProperty::GetEnum() const
+{
+    static uint32_t off = 0;
+    if (off == 0) {
+        auto e = vm_rpm_ptr<UE_UEnum>(object + UEVars::offsets.FProperty.Size + sizeof(void*));
+        if (e && *(uint32_t *)e.GetCppTypeName().data() == 'mune') {
+            off = UEVars::offsets.FProperty.Size + sizeof(void*);
+        } else {
+            e = vm_rpm_ptr<UE_UEnum>(object + UEVars::offsets.FProperty.Size);
+            if (e && *(uint32_t *)e.GetCppTypeName().data() == 'mune') {
+                off = UEVars::offsets.FProperty.Size;
+            }
+        }
+        return off == 0 ? nullptr : e;
+    }
+    
+    return vm_rpm_ptr<UE_UEnum>(object + off);
 }
 
 std::string UE_FEnumProperty::GetTypeStr() const
 {
-    return "enum class " + GetEnum().GetName();
+    if (GetEnum())
+        return "enum class " + GetEnum().GetName();
+    
+    return GetUnderlayingProperty().GetType().second;
 }
 
 UE_UClass UE_FClassProperty::GetMetaClass() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.FProperty.Size + sizeof(void *));
+    return vm_rpm_ptr<UE_UClass>(object + UEVars::offsets.FProperty.Size + sizeof(void *));
 }
 
 std::string UE_FClassProperty::GetTypeStr() const
 {
-    return "struct " + GetMetaClass().GetCppName() + "*";
+    return "class " + GetMetaClass().GetCppName() + "*";
+}
+
+std::string UE_FSoftClassProperty::GetTypeStr() const
+{
+    auto className = GetMetaClass() ? GetMetaClass().GetCppName() : GetPropertyClass().GetCppName();
+    return "struct TSoftClassPtr<class " + className + "*>";
 }
 
 UE_FProperty UE_FSetProperty::GetElementProp() const
 {
-    return vm_rpm_ptr<UE_FProperty>(object + Profile::offsets.FProperty.Size);
+    return vm_rpm_ptr<UE_FProperty>(object + UEVars::offsets.FProperty.Size);
 }
 
 std::string UE_FSetProperty::GetTypeStr() const
@@ -1406,12 +1598,12 @@ std::string UE_FSetProperty::GetTypeStr() const
 
 UE_FProperty UE_FMapProperty::GetKeyProp() const
 {
-    return vm_rpm_ptr<UE_FProperty>(object + Profile::offsets.FProperty.Size);
+    return vm_rpm_ptr<UE_FProperty>(object + UEVars::offsets.FProperty.Size);
 }
 
 UE_FProperty UE_FMapProperty::GetValueProp() const
 {
-    return vm_rpm_ptr<UE_FProperty>(object + Profile::offsets.FProperty.Size + sizeof(void *));
+    return vm_rpm_ptr<UE_FProperty>(object + UEVars::offsets.FProperty.Size + sizeof(void *));
 }
 
 std::string UE_FMapProperty::GetTypeStr() const
@@ -1421,7 +1613,7 @@ std::string UE_FMapProperty::GetTypeStr() const
 
 UE_UClass UE_FInterfaceProperty::GetInterfaceClass() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + Profile::offsets.FProperty.Size);
+    return vm_rpm_ptr<UE_UClass>(object + UEVars::offsets.FProperty.Size);
 }
 
 std::string UE_FInterfaceProperty::GetTypeStr() const
@@ -1431,7 +1623,7 @@ std::string UE_FInterfaceProperty::GetTypeStr() const
 
 UE_FName UE_FFieldPathProperty::GetPropertyName() const
 {
-    return vm_rpm_ptr<UE_FName>(object + Profile::offsets.FProperty.Size);
+    return vm_rpm_ptr<UE_FName>(object + UEVars::offsets.FProperty.Size);
 }
 
 std::string UE_FFieldPathProperty::GetTypeStr() const
@@ -1439,27 +1631,27 @@ std::string UE_FFieldPathProperty::GetTypeStr() const
     return "struct TFieldPath<F" + GetPropertyName().GetName() + ">";
 }
 
-void UE_UPackage::GenerateBitPadding(std::vector<Member> &members, uint32 offset, uint8 bitOffset, uint8 size)
+void UE_UPackage::GenerateBitPadding(std::vector<Member> &members, uint32_t offset, uint8_t bitOffset, uint8_t size)
 {
     Member padding;
-    padding.Type = "char";
-    padding.Name = fmt::format("pad_0x{:0X}_{} : {}", offset, bitOffset, size);
+    padding.Type = "uint8_t";
+    padding.Name = fmt::format("BitPad_0x{:0X}_{} : {}", offset, bitOffset, size);
     padding.Offset = offset;
     padding.Size = 1;
     members.push_back(padding);
 }
 
-void UE_UPackage::GeneratePadding(std::vector<Member> &members, uint32 offset, uint32 size)
+void UE_UPackage::GeneratePadding(std::vector<Member> &members, uint32_t offset, uint32_t size)
 {
     Member padding;
-    padding.Type = "char";
-    padding.Name = fmt::format("pad_0x{:0X}[{:#0x}]", offset, size);
+    padding.Type = "uint8_t";
+    padding.Name = fmt::format("Pad_0x{:0X}[{:#0x}]", offset, size);
     padding.Offset = offset;
     padding.Size = size;
     members.push_back(padding);
 }
 
-void UE_UPackage::FillPadding(UE_UStruct object, std::vector<Member> &members, uint32 &offset, uint8 &bitOffset, uint32 end)
+void UE_UPackage::FillPadding(const UE_UStruct &object, std::vector<Member> &members, uint32_t &offset, uint8_t &bitOffset, uint32_t end)
 {
     (void)object;
 
@@ -1477,7 +1669,7 @@ void UE_UPackage::FillPadding(UE_UStruct object, std::vector<Member> &members, u
     }
 }
 
-void UE_UPackage::GenerateFunction(UE_UFunction fn, Function *out)
+void UE_UPackage::GenerateFunction(const UE_UFunction &fn, Function *out)
 {
     out->Name = fn.GetName();
     out->FullName = fn.GetFullName();
@@ -1492,12 +1684,12 @@ void UE_UPackage::GenerateFunction(UE_UFunction fn, Function *out)
         auto flags = prop->GetPropertyFlags();
 
         // if property has 'ReturnParm' flag
-        if (flags & 0x400)
+        if (flags & CPF_ReturnParm)
         {
             out->CppName = prop->GetType().second + " " + fn.GetName();
         }
         // if property has 'Parm' flag
-        else if (flags & 0x80)
+        else if (flags & CPF_Parm)
         {
             if (prop->GetArrayDim() > 1)
             {
@@ -1505,7 +1697,7 @@ void UE_UPackage::GenerateFunction(UE_UFunction fn, Function *out)
             }
             else
             {
-                if (flags & 0x100)
+                if (flags & CPF_OutParm)
                 {
                     out->Params += fmt::format("{}& {}, ", prop->GetType().second, prop->GetName());
                 }
@@ -1538,7 +1730,7 @@ void UE_UPackage::GenerateFunction(UE_UFunction fn, Function *out)
     }
 }
 
-void UE_UPackage::GenerateStruct(UE_UStruct object, std::vector<Struct> &arr)
+void UE_UPackage::GenerateStruct(const UE_UStruct &object, std::vector<Struct> &arr)
 {
     Struct s;
     s.Size = object.GetSize();
@@ -1549,17 +1741,22 @@ void UE_UPackage::GenerateStruct(UE_UStruct object, std::vector<Struct> &arr)
     s.Inherited = 0;
     s.Name = object.GetName();
     s.FullName = object.GetFullName();
-    s.CppName = "struct " + object.GetCppName();
-
+    
+    bool isClass = object.IsA<UE_UClass>();
+    s.CppName = isClass ? "class " : "struct ";
+    s.CppName += object.GetCppName();
+    
     auto super = object.GetSuper();
     if (super)
     {
-        s.CppName += " : " + super.GetCppName();
+        s.CppName += " : ";
+        if (isClass) s.CppName += "public ";
+        s.CppName += super.GetCppName();
         s.Inherited = super.GetSize();
     }
 
-    uint32 offset = s.Inherited;
-    uint8 bitOffset = 0;
+    uint32_t offset = s.Inherited;
+    uint8_t bitOffset = 0;
 
     auto generateMember = [&](IProperty *prop, Member *m)
     {
@@ -1579,11 +1776,11 @@ void UE_UPackage::GenerateStruct(UE_UStruct object, std::vector<Struct> &arr)
         {
             UE_UPackage::FillPadding(object, s.Members, offset, bitOffset, m->Offset);
         }
-        if (type.first == PropertyType::BoolProperty && *(uint32 *)type.second.data() != 'loob')
+        if (type.first == PropertyType::BoolProperty && *(uint32_t *)type.second.data() != 'loob')
         {
             auto boolProp = prop;
             auto mask = boolProp->GetFieldMask();
-            uint8 zeros = 0, ones = 0;
+            uint8_t zeros = 0, ones = 0;
             while (mask & ~1)
             {
                 mask >>= 1;
@@ -1654,100 +1851,103 @@ void UE_UPackage::GenerateStruct(UE_UStruct object, std::vector<Struct> &arr)
     arr.push_back(s);
 }
 
-void UE_UPackage::GenerateEnum(UE_UEnum object, std::vector<Enum> &arr)
+void UE_UPackage::GenerateEnum(const UE_UEnum &object, std::vector<Enum> &arr)
 {
     Enum e;
     e.FullName = object.GetFullName();
-
+    
     auto names = object.GetNames();
-
-    uint64 max = 0;
-    uint64 nameSize = ((Profile::offsets.FName.Number + 4) + 7) & ~(7);
-    uint64 pairSize = nameSize + 8;
-
-    for (int32 i = 0; i < names.Count; i++)
+    
+    uint64_t max = 0;
+    
+    // size of FName struct
+    auto numOff = UEVars::offsets.FName.Number == 0 ? 4 : UEVars::offsets.FName.Number;
+    uint64_t nameSize = ((numOff + 4) + 7) & ~(7);
+    
+    uint64_t pairSize = nameSize + 8;
+    
+    for (int32_t i = 0; i < names.Count; i++)
     {
         auto pair = names.Data + i * pairSize;
         auto name = UE_FName(pair);
         auto str = name.GetName();
         auto pos = str.find_last_of(':');
         if (pos != std::string::npos)
-        {
             str = str.substr(pos + 1);
-        }
-
-        auto value = vm_rpm_ptr<int64>(pair + nameSize);
-        if ((uint64)value > max)
+        
+        auto value = vm_rpm_ptr<uint64_t>(pair + nameSize);
+        if (value > max)
             max = value;
-
+        
         str.append(" = ").append(fmt::format("{}", value));
         e.Members.push_back(str);
     }
-
+    
     const char *type = nullptr;
-
-    // I didn't see int16 yet, so I assume the engine generates only int32 and uint8:
-    if (max > 256)
-    {
-        type = " : int32_t"; // I assume if enum has a negative value it is int32
-    }
+    
+    if (max > GetMaxOfType<uint32_t>())
+        type = " : uint64_t";
+    else if (max > GetMaxOfType<uint16_t>())
+        type = " : uint32_t";
+    else if (max > GetMaxOfType<uint8_t>())
+        type = " : uint16_t";
     else
-    {
         type = " : uint8_t";
-    }
-
+    
     e.CppName = "enum class " + object.GetName() + type;
-
+    
     if (e.Members.size())
     {
         arr.push_back(e);
     }
 }
 
-void UE_UPackage::SaveStruct(std::vector<Struct> &arr, FILE *file)
+void UE_UPackage::AppendStructsToBuffer(std::vector<Struct> &arr, BufferFmt *pBufFmt)
 {
     for (auto &s : arr)
     {
-        fmt::print(file, "// Object: {}\n// Inherited Bytes: {:#0x} | Struct Size: {:#0x}\n{} {{", s.FullName, s.Inherited, s.Size, s.CppName);
+        pBufFmt->append("// Object: {}\n// Size: {:#04x} (Inherited: {:#04x})\n{}\n{{",
+                       s.FullName, s.Size, s.Inherited, s.CppName);
 
         if (s.Members.size())
         {
-            fmt::print(file, "\n\t// Fields");
             for (auto &m : s.Members)
             {
-                fmt::print(file, "\n\t{} {}; // Offset: {:#0x} | Size: {:#0x}", m.Type, m.Name, m.Offset, m.Size);
+                pBufFmt->append("\n\t{} {}; // {:#04x}({:#04x})", m.Type, m.Name, m.Offset, m.Size);
             }
         }
         if (s.Functions.size())
         {
-            fmt::print(file, "{}\n\t// Functions", s.Members.size() ? "\n" : "");
+            if (s.Members.size())
+                pBufFmt->append("\n");
+            
             for (auto &f : s.Functions)
             {
-                void *funcOffset = f.Func ? (void*)(f.Func - Profile::BaseAddress) : nullptr;
-                fmt::print(file, "\n\n\t// Object: {}\n\t// Flags: [{}]\n\t// Offset: {}\n\t// Return & Params: [ Num({}) Size({:#0x}) ]\n\t{}({});", f.FullName, f.Flags, funcOffset, f.NumParams, f.ParamSize, f.CppName, f.Params);
+                void *funcOffset = f.Func ? (void*)(f.Func - UEVars::BaseAddress) : nullptr;
+                pBufFmt->append("\n\n\t// Object: {}\n\t// Flags: [{}]\n\t// Offset: {}\n\t// Params: [ Num({}) Size({:#04x}) ]\n\t{}({});", f.FullName, f.Flags, funcOffset, f.NumParams, f.ParamSize, f.CppName, f.Params);
             }
         }
-        fmt::print(file, "\n}};\n\n");
+        pBufFmt->append("\n}};\n\n");
     }
 }
 
-void UE_UPackage::SaveEnum(std::vector<Enum> &arr, FILE *file)
+void UE_UPackage::AppendEnumsToBuffer(std::vector<Enum> &arr, BufferFmt *pBufFmt)
 {
     for (auto &e : arr)
     {
-        fmt::print(file, "// Object: {}\n{} {{", e.FullName, e.CppName);
+        pBufFmt->append("// Object: {}\n{}\n{{", e.FullName, e.CppName);
 
         size_t lastIdx = e.Members.size() - 1;
         for (size_t i = 0; i < lastIdx; i++)
         {
             auto &m = e.Members.at(i);
-            fmt::print(file, "\n\t{},", m);
+            pBufFmt->append("\n\t{},", m);
         }
 
         auto &m = e.Members.at(lastIdx);
-        fmt::print(file, "\n\t{}", m);
+        pBufFmt->append("\n\t{}", m);
 
-        fmt::print(file, "\n}};\n\n");
+        pBufFmt->append("\n}};\n\n");
     }
 }
 
@@ -1771,9 +1971,9 @@ void UE_UPackage::Process()
     }
 }
 
-bool UE_UPackage::Save(const std::string &dir, const std::string &headers_dir)
+bool UE_UPackage::AppendToBuffer(BufferFmt *pBufFmt)
 {
-	if (dir.empty() && headers_dir.empty())
+	if (!pBufFmt)
 		return false;
 
 	if (!Classes.size() && !Structures.size() && !Enums.size())
@@ -1782,82 +1982,25 @@ bool UE_UPackage::Save(const std::string &dir, const std::string &headers_dir)
     // make safe to use as a file name
     std::string packageName = ioutils::replace_specials(GetObject().GetName(), '_');
 
-	File fulldump_file(dir + "/AIOHeader.hpp", "a");
-	if (fulldump_file.ok())
-	{
-		fmt::print(fulldump_file, "// Package {}: [ Enums: {} | Structs: {} | Classes: {} ]\n\n", packageName, Enums.size(), Structures.size(), Classes.size());
-	}
+    pBufFmt->append("#pragma once\n\n#include <cstdio>\n#include <string>\n#include <cstdint>\n\n");
+
+	pBufFmt->append("// Package: {}\n// Enums: {}\n// Structs: {}\n// Classes: {}\n\n",
+                    packageName, Enums.size(), Structures.size(), Classes.size());
 
 	if (Enums.size())
-	{
-		if (!headers_dir.empty())
-		{
-			std::string file_path = headers_dir;
-            file_path += "/";
-			file_path += packageName;
-			file_path += "_enums.hpp";
-			File file(file_path, "w");
-			if (file.ok())
-            {
-                fmt::print(file, "#pragma once\n\n#include <cstdio>\n#include <string>\n#include <cstdint>\n\n");
-                UE_UPackage::SaveEnum(Enums, file);
-            }
-		}
-
-		if (fulldump_file.ok())
-		{
-			UE_UPackage::SaveEnum(Enums, fulldump_file);
-			fmt::print(fulldump_file, "\n\n");
-		}
-	}
-
-	if (Structures.size())
-	{
-		if (!headers_dir.empty())
-		{
-			std::string file_path = headers_dir;
-            file_path += "/";
-			file_path += packageName;
-			file_path += "_structs.hpp";
-			File file(file_path.c_str(), "w");
-			if (file.ok())
-            {
-                fmt::print(file, "#pragma once\n\n#include <cstdio>\n#include <string>\n#include <cstdint>\n\n");
-                UE_UPackage::SaveStruct(Structures, file);
-            }	
-		}
-
-		if (fulldump_file.ok())
-		{
-			UE_UPackage::SaveStruct(Structures, fulldump_file);
-			fmt::print(fulldump_file, "\n\n");
-		}
-	}
-
-	if (Classes.size())
-	{
-		if (!headers_dir.empty())
-		{
-			std::string file_path = headers_dir;
-            file_path += "/";
-			file_path += packageName;
-			file_path += "_classes.hpp";
-			File file(file_path.c_str(), "w");
-			if (file.ok())
-            {
-                fmt::print(file, "#pragma once\n\n#include <cstdio>\n#include <string>\n#include <cstdint>\n\n");
-                UE_UPackage::SaveStruct(Classes, file);
-            }
-		}
-
-		if (fulldump_file.ok())
-		{
-			UE_UPackage::SaveStruct(Classes, fulldump_file);
-			fmt::print(fulldump_file, "\n\n");
-		}
-	}
+    {
+        UE_UPackage::AppendEnumsToBuffer(Enums, pBufFmt);
+    }
+    
+    if (Structures.size())
+    {
+        UE_UPackage::AppendStructsToBuffer(Structures, pBufFmt);
+    }
+    
+    if (Classes.size())
+    {
+        UE_UPackage::AppendStructsToBuffer(Classes, pBufFmt);
+    }
 
 	return true;
 }
-
-UE_UObject UE_UPackage::GetObject() const { return UE_UObject(Package->first); }
