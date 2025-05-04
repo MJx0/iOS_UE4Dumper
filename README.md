@@ -9,7 +9,7 @@ project.
 
 * Supports ARM64 & ARM64e
 * CodeSign friendly, you can use this as a jailed tweak
-* Dumps UE4 classes, structs, enums and functions
+* Dumps UE classes, structs, enums and functions
 * Generates function names json script to use with IDA & Ghidra
 * Pattern scanning to find the GUObjectArray, GNames and FNamePoolData addresses automatically
 * Transfer dump files via AirDrop/[LocalSend](https://github.com/localsend/localsend)
