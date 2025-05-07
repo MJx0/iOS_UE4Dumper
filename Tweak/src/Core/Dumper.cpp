@@ -38,6 +38,8 @@ namespace Dumper
 
 	DumpStatus InitUEVars(IGameProfile *gameProfile)
 	{
+        UEVars::Profile = gameProfile;
+        
 		UEVars::BaseAddress = gameProfile->GetExecutableInfo().address;
 		if (UEVars::BaseAddress == 0)
 			return UE_DS_ERROR_EXE_NOT_FOUND;
@@ -48,7 +50,7 @@ namespace Dumper
 		if (!p_offsets)
 			return UE_DS_ERROR_INIT_OFFSETS;
 
-		UEVars::offsets = *(UE_Offsets *)p_offsets;
+		UEVars::Offsets = *(UE_Offsets *)p_offsets;
 
 		UEVars::isUsingFNamePool = gameProfile->IsUsingFNamePool();
         UEVars::isUsingOutlineNumberName = gameProfile->isUsingOutlineNumberName();
@@ -70,29 +72,20 @@ namespace Dumper
 		if (GUObjectsArrayPtr == 0)
 			return UE_DS_ERROR_INIT_GUOBJECTARRAY;
 
-		UEVars::ObjObjectsPtr = GUObjectsArrayPtr + UEVars::offsets.FUObjectArray.ObjObjects;
+		UEVars::ObjObjectsPtr = GUObjectsArrayPtr + UEVars::Offsets.FUObjectArray.ObjObjects;
 		
-        if (!vm_rpm_ptr((void *)(UEVars::ObjObjectsPtr + UEVars::offsets.TUObjectArray.Objects), &UEVars::ObjObjects.Objects, sizeof(uintptr_t)))
+        if (!vm_rpm_ptr((void *)(UEVars::ObjObjectsPtr + UEVars::Offsets.TUObjectArray.Objects), &UEVars::ObjObjects.Objects, sizeof(uintptr_t)))
 			return UE_DS_ERROR_INIT_OBJOBJECTS;
         
-        if (gameProfile->CustomNameByIndex())
-            UEVars::customNameByIndex = gameProfile->CustomNameByIndex();
-        
-        if (gameProfile->CustomObjectByIndex())
-            UEVars::customObjectByIndex = gameProfile->CustomObjectByIndex();
-
 		return UE_DS_NONE;
 	}
 
-    DumpStatus Dump(IGameProfile *profile, std::unordered_map<std::string, BufferFmt> *outBuffersMap)
+    DumpStatus Dump(std::unordered_map<std::string, BufferFmt> *outBuffersMap)
     {
-        auto exe_info = profile->GetExecutableInfo();
+        
+        auto exe_info = UEVars::Profile->GetExecutableInfo();
         if (!exe_info.name || exe_info.address == 0)
             return UE_DS_ERROR_EXE_NOT_FOUND;
-        
-        auto uevars_init_status = InitUEVars(profile);
-        if (uevars_init_status != UE_DS_NONE)
-            return uevars_init_status;
         
         outBuffersMap->insert({"Logs.txt", BufferFmt()});
         BufferFmt &logsBufferFmt = outBuffersMap->at("Logs.txt");
@@ -123,7 +116,7 @@ namespace Dumper
         logsBufferFmt.append("Test dumping first 5 name entries\n");
         for (int i = 0; i < 5; i++)
         {
-            logsBufferFmt.append("GetNameByID({}): {}\n", i, UE_GetNameByID(i));
+            logsBufferFmt.append("GetNameByID({}): {}\n", i, UEVars::Profile->GetNameByID(i));
         }
         logsBufferFmt.append("==========================\n");
         

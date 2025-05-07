@@ -5,7 +5,8 @@
 #include "../Utils/memory.hpp"
 #include "../Utils/BufferFmt.hpp"
 
-#include <utfcpp/utf8.h>
+#include "Offsets.hpp"
+#include "GameProfile.hpp"
 
 namespace UEVars
 {
@@ -20,144 +21,18 @@ namespace UEVars
     uintptr_t ObjObjectsPtr = 0;
 
     UE_UObjectArray ObjObjects{};
-
-    UE_Offsets offsets{};
     
-    NameByIndex_t customNameByIndex = nullptr;
-    ObjectByIndex_t customObjectByIndex = nullptr;
+    UE_Offsets Offsets{};
+
+    IGameProfile *Profile = nullptr;
 }
-
-
-uint8_t *GetNameEntryByID(int32_t id)
-{
-    if (id < 0)
-        return nullptr;
-    
-    if (UEVars::GNamesPtr == 0 && UEVars::NamePoolDataPtr == 0)
-        return nullptr;
-    
-    if (!UEVars::isUsingFNamePool)
-    {
-        const int32_t ElementsPerChunk = 16384;
-        const int32_t ChunkIndex = id / ElementsPerChunk;
-        const int32_t WithinChunkIndex = id % ElementsPerChunk;
-        
-        // FNameEntry**
-        uint8_t *FNameEntryArray = vm_rpm_ptr<uint8_t *>((void*)(UEVars::GNamesPtr + ChunkIndex * sizeof(uintptr_t)));
-        if (!FNameEntryArray)
-            return nullptr;
-        
-        // FNameEntry*
-        return vm_rpm_ptr<uint8_t *>(FNameEntryArray + WithinChunkIndex * sizeof(uintptr_t));
-    }
-    
-    uint32_t block_offset = ((id >> 16) * sizeof(void*));
-    uint32_t chunck_offset = ((id & 0xffff) * UEVars::offsets.Stride);
-    
-    uint8_t *chunck = vm_rpm_ptr<uint8_t *>((void *)(UEVars::NamePoolDataPtr + UEVars::offsets.FNamePoolBlocks + block_offset));
-    if (!chunck)
-        return nullptr;
-    
-    return (chunck + chunck_offset);
-}
-
-std::string GetNameEntryStr(uint8_t *entry)
-{
-    if (!entry) return "";
-    
-    uint8_t *pStr = nullptr;
-    bool isWide = false;
-    size_t strLen = 0;
-    int strNumber = 0;
-    
-    if (!UEVars::isUsingFNamePool)
-    {
-        int32_t name_index = 0;
-        if (!vm_rpm_ptr(entry, &name_index, sizeof(int32_t)))
-            return "";
-        
-        pStr = entry + UEVars::offsets.FNameEntry.Name;
-        isWide = (name_index & 1);
-        strLen = UEVars::offsets.FNameMaxSize;
-    }
-    else
-    {
-        int16_t header = 0;
-        if (!vm_rpm_ptr(entry + UEVars::offsets.FNameEntry23.Header, &header, sizeof(int16_t)))
-            return "";
-        
-        if (UEVars::isUsingOutlineNumberName && UEVars::offsets.FNameEntry23.GetLength(header) == 0)
-        {
-            const int32_t stringOff = UEVars::offsets.FNameEntry23.Header + sizeof(int16_t);
-            const int32_t entryIdOff = stringOff + ((stringOff == 6) * 2);
-            const int32_t nextEntryId = vm_rpm_ptr<int32_t>(entry + entryIdOff);
-            if (nextEntryId <= 0)
-                return "";
-            
-            strNumber = vm_rpm_ptr<int32_t>(entry + entryIdOff + sizeof(int32_t));
-            entry = GetNameEntryByID(nextEntryId);
-            if (!vm_rpm_ptr(entry + UEVars::offsets.FNameEntry23.Header, &header, sizeof(int16_t)))
-                return "";
-        }
-        
-        strLen = std::min<size_t>(UEVars::offsets.FNameEntry23.GetLength(header), UEVars::offsets.FNameMaxSize);
-        if (strLen <= 0)
-            return "";
-        
-        isWide = UEVars::offsets.FNameEntry23.GetIsWide(header);
-        pStr = entry + UEVars::offsets.FNameEntry23.Header + sizeof(int16_t);
-    }
-    
-    std::string result = "";
-    
-    if (isWide)
-    {
-        std::wstring wstr = vm_rpm_strw(pStr, strLen);
-        if (!wstr.empty())
-            utf8::utf16to8(wstr.begin(), wstr.end(), std::back_inserter(result));
-    }
-    else
-    {
-        result = vm_rpm_str(pStr, strLen);
-    }
-    
-    if (strNumber > 0)
-        result += '_' + std::to_string(strNumber - 1);
-    
-    return result;
-}
-
-std::string UE_GetNameByID(int32_t id)
-{
-    static std::unordered_map<int32_t, std::string> namesCachedMap;
-    if (namesCachedMap.count(id) > 0)
-        return namesCachedMap[id];
-    
-    std::string name;
-    if (UEVars::customNameByIndex)
-    {
-        name = UEVars::customNameByIndex(id);
-    }
-    else
-    {
-        name = GetNameEntryStr(GetNameEntryByID(id));
-    }
-    
-    if (!name.empty())
-    {
-        namesCachedMap[id] = name;
-    }
-
-    return name;
-}
-
 
 int32_t UE_UObjectArray::GetNumElements() const
 {
     if (UEVars::ObjObjectsPtr == 0)
         return 0;
 
-    return vm_rpm_ptr<int32_t>((void *)(UEVars::ObjObjectsPtr + UEVars::offsets.TUObjectArray.NumElements));
+    return vm_rpm_ptr<int32_t>((void *)(UEVars::ObjObjectsPtr + UEVars::Offsets.TUObjectArray.NumElements));
 }
 
 uint8_t *UE_UObjectArray::GetObjectPtr(int32_t id) const
@@ -165,14 +40,9 @@ uint8_t *UE_UObjectArray::GetObjectPtr(int32_t id) const
     if (id < 0 || id >= GetNumElements() || !Objects)
         return nullptr;
     
-    if (UEVars::customObjectByIndex)
-    {
-        return UEVars::customObjectByIndex(id);
-    }
-    
     if (!UEVars::isUsingFNamePool)
     {
-        return vm_rpm_ptr<uint8_t *>((void *)((uintptr_t)Objects + (id * UEVars::offsets.FUObjectItem.Size) + UEVars::offsets.FUObjectItem.Object));
+        return vm_rpm_ptr<uint8_t *>((void *)((uintptr_t)Objects + (id * UEVars::Offsets.FUObjectItem.Size) + UEVars::Offsets.FUObjectItem.Object));
     }
     
     const int32_t NumElementsPerChunk = 64 * 1024;
@@ -185,7 +55,7 @@ uint8_t *UE_UObjectArray::GetObjectPtr(int32_t id) const
     if (!chunk)
         return nullptr;
     
-    return vm_rpm_ptr<uint8_t *>(chunk + (withinChunkIndex * UEVars::offsets.FUObjectItem.Size)  + UEVars::offsets.FUObjectItem.Object);
+    return vm_rpm_ptr<uint8_t *>(chunk + (withinChunkIndex * UEVars::Offsets.FUObjectItem.Size)  + UEVars::Offsets.FUObjectItem.Object);
 }
 
 void UE_UObjectArray::ForEachObject(const std::function<bool(uint8_t *)> &callback) const
@@ -226,21 +96,19 @@ int UE_FName::GetNumber() const
     if (!object || UEVars::isUsingOutlineNumberName)
         return 0;
     
-    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.FName.Number);
+    return vm_rpm_ptr<int32_t>(object + UEVars::Offsets.FName.Number);
 }
 
 std::string UE_FName::GetName() const
 {
-    if (!object)
-        return "";
+    if (!object) return "";
     
     int32_t index = 0;
     if (!vm_rpm_ptr(object, &index, sizeof(int32_t)) && index < 0)
         return "";
     
-    std::string name = UE_GetNameByID(index);
-    if (name.empty())
-        return "";
+    std::string name = UEVars::Profile->GetNameByID(index);
+    if (name.empty()) return "";
     
     if (!UEVars::isUsingOutlineNumberName)
     {
@@ -262,32 +130,28 @@ std::string UE_FName::GetName() const
 
 int32_t UE_UObject::GetIndex() const
 {
-    if (!object)
-        return -1;
+    if (!object) return -1;
 
-    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.UObject.InternalIndex);
+    return vm_rpm_ptr<int32_t>(object + UEVars::Offsets.UObject.InternalIndex);
 }
 
 UE_UClass UE_UObject::GetClass() const
 {
-    if (!object)
-        return nullptr;
+    if (!object) return nullptr;
 
-    return vm_rpm_ptr<UE_UClass>(object + UEVars::offsets.UObject.ClassPrivate);
+    return vm_rpm_ptr<UE_UClass>(object + UEVars::Offsets.UObject.ClassPrivate);
 }
 
 UE_UObject UE_UObject::GetOuter() const
 {
-    if (!object)
-        return nullptr;
+    if (!object) return nullptr;
 
-    return vm_rpm_ptr<UE_UObject>(object + UEVars::offsets.UObject.OuterPrivate);
+    return vm_rpm_ptr<UE_UObject>(object + UEVars::Offsets.UObject.OuterPrivate);
 }
 
 UE_UObject UE_UObject::GetPackageObject() const
 {
-    if (!object)
-        return nullptr;
+    if (!object) return nullptr;
 
     UE_UObject package(nullptr);
     for (auto outer = GetOuter(); outer; outer = outer.GetOuter())
@@ -299,17 +163,15 @@ UE_UObject UE_UObject::GetPackageObject() const
 
 std::string UE_UObject::GetName() const
 {
-    if (!object)
-        return "";
+    if (!object) return "";
 
-    auto fname = UE_FName(object + UEVars::offsets.UObject.NamePrivate);
+    auto fname = UE_FName(object + UEVars::Offsets.UObject.NamePrivate);
     return fname.GetName();
 }
 
 std::string UE_UObject::GetFullName() const
 {
-    if (!object)
-        return "";
+    if (!object) return "";
 
     std::string temp;
     for (auto outer = GetOuter(); outer; outer = outer.GetOuter())
@@ -323,8 +185,7 @@ std::string UE_UObject::GetFullName() const
 
 std::string UE_UObject::GetCppTypeName() const
 {
-    if (!object)
-        return "";
+    if (!object) return "";
 
     if (IsA<UE_UEnum>())
     {
@@ -340,8 +201,7 @@ std::string UE_UObject::GetCppTypeName() const
 
 std::string UE_UObject::GetCppName() const
 {
-    if (!object)
-        return "";
+    if (!object) return "";
 
     std::string name;
     if (IsA<UE_UClass>())
@@ -376,8 +236,7 @@ std::string UE_UObject::GetCppName() const
 
 bool UE_UObject::IsA(UE_UClass cmp) const
 {
-    if (!object)
-        return false;
+    if (!object) return false;
 
     for (auto super = GetClass(); super; super = super.GetSuper().Cast<UE_UClass>())
     {
@@ -413,7 +272,7 @@ UE_UField UE_UField::GetNext() const
     if (!object)
         return nullptr;
 
-    return vm_rpm_ptr<UE_UField>(object + UEVars::offsets.UField.Next);
+    return vm_rpm_ptr<UE_UField>(object + UEVars::Offsets.UField.Next);
 }
 
 UE_UClass UE_UField::StaticClass()
@@ -459,22 +318,22 @@ uint8_t IUProperty::GetFieldMask() const
 
 int32_t UE_UProperty::GetArrayDim() const
 {
-    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.UProperty.ArrayDim);
+    return vm_rpm_ptr<int32_t>(object + UEVars::Offsets.UProperty.ArrayDim);
 }
 
 int32_t UE_UProperty::GetSize() const
 {
-    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.UProperty.ElementSize);
+    return vm_rpm_ptr<int32_t>(object + UEVars::Offsets.UProperty.ElementSize);
 }
 
 int32_t UE_UProperty::GetOffset() const
 {
-    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.UProperty.Offset_Internal);
+    return vm_rpm_ptr<int32_t>(object + UEVars::Offsets.UProperty.Offset_Internal);
 }
 
 uint64_t UE_UProperty::GetPropertyFlags() const
 {
-    return vm_rpm_ptr<uint64_t>(object + UEVars::offsets.UProperty.PropertyFlags);
+    return vm_rpm_ptr<uint64_t>(object + UEVars::Offsets.UProperty.PropertyFlags);
 }
 
 std::pair<PropertyType, std::string> UE_UProperty::GetType() const
@@ -600,30 +459,30 @@ UE_UClass UE_UProperty::StaticClass()
 
 UE_UStruct UE_UStruct::GetSuper() const
 {
-    return vm_rpm_ptr<UE_UStruct>(object + UEVars::offsets.UStruct.SuperStruct);
+    return vm_rpm_ptr<UE_UStruct>(object + UEVars::Offsets.UStruct.SuperStruct);
 }
 
 UE_FField UE_UStruct::GetChildProperties() const
 {
-    if (UEVars::offsets.UStruct.ChildProperties > 0)
+    if (UEVars::Offsets.UStruct.ChildProperties > 0)
     {
-        return vm_rpm_ptr<UE_FField>(object + UEVars::offsets.UStruct.ChildProperties);
+        return vm_rpm_ptr<UE_FField>(object + UEVars::Offsets.UStruct.ChildProperties);
     }
     return {};
 }
 
 UE_UField UE_UStruct::GetChildren() const
 {
-    if (UEVars::offsets.UStruct.Children > 0)
+    if (UEVars::Offsets.UStruct.Children > 0)
     {
-        return vm_rpm_ptr<UE_UField>(object + UEVars::offsets.UStruct.Children);
+        return vm_rpm_ptr<UE_UField>(object + UEVars::Offsets.UStruct.Children);
     }
     return {};
 }
 
 int32_t UE_UStruct::GetSize() const
 {
-    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.UStruct.PropertiesSize);
+    return vm_rpm_ptr<int32_t>(object + UEVars::Offsets.UStruct.PropertiesSize);
 }
 
 UE_UClass UE_UStruct::StaticClass()
@@ -655,22 +514,22 @@ UE_UField UE_UStruct::FindChild(const std::string &name) const
 
 uintptr_t UE_UFunction::GetFunc() const
 {
-    return vm_rpm_ptr<uintptr_t>(object + UEVars::offsets.UFunction.Func);
+    return vm_rpm_ptr<uintptr_t>(object + UEVars::Offsets.UFunction.Func);
 }
 
 int8_t UE_UFunction::GetNumParams() const
 {
-    return vm_rpm_ptr<int8_t>(object + UEVars::offsets.UFunction.NumParams);
+    return vm_rpm_ptr<int8_t>(object + UEVars::Offsets.UFunction.NumParams);
 }
 
 int16_t UE_UFunction::GetParamSize() const
 {
-    return vm_rpm_ptr<int16_t>(object + UEVars::offsets.UFunction.ParamSize);
+    return vm_rpm_ptr<int16_t>(object + UEVars::Offsets.UFunction.ParamSize);
 }
 
 uint32_t UE_UFunction::GetFunctionEFlags() const
 {
-    return vm_rpm_ptr<uint32_t>(object + UEVars::offsets.UFunction.EFunctionFlags);
+    return vm_rpm_ptr<uint32_t>(object + UEVars::Offsets.UFunction.EFunctionFlags);
 }
 
 std::string UE_UFunction::GetFunctionFlags() const
@@ -831,7 +690,7 @@ UE_UClass UE_UClass::StaticClass()
 
 TArray UE_UEnum::GetNames() const
 {
-    return vm_rpm_ptr<TArray>(object + UEVars::offsets.UEnum.Names);
+    return vm_rpm_ptr<TArray>(object + UEVars::Offsets.UEnum.Names);
 }
 
 std::string UE_UEnum::GetName() const
@@ -858,7 +717,7 @@ UE_UClass UE_UDoubleProperty::StaticClass()
 
 UE_UStruct UE_UStructProperty::GetStruct() const
 {
-    return vm_rpm_ptr<UE_UStruct>(object + UEVars::offsets.UProperty.Size);
+    return vm_rpm_ptr<UE_UStruct>(object + UEVars::Offsets.UProperty.Size);
 }
 
 std::string UE_UStructProperty::GetTypeStr() const
@@ -882,7 +741,7 @@ UE_UClass UE_UNameProperty::StaticClass()
 
 UE_UClass UE_UObjectPropertyBase::GetPropertyClass() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + UEVars::offsets.UProperty.Size);
+    return vm_rpm_ptr<UE_UClass>(object + UEVars::Offsets.UProperty.Size);
 }
 
 std::string UE_UObjectPropertyBase::GetTypeStr() const
@@ -898,7 +757,7 @@ UE_UClass UE_UObjectPropertyBase::StaticClass()
 
 UE_UClass UE_UObjectProperty::GetPropertyClass() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + UEVars::offsets.UProperty.Size);
+    return vm_rpm_ptr<UE_UClass>(object + UEVars::Offsets.UProperty.Size);
 }
 
 std::string UE_UObjectProperty::GetTypeStr() const
@@ -914,7 +773,7 @@ UE_UClass UE_UObjectProperty::StaticClass()
 
 UE_UProperty UE_UArrayProperty::GetInner() const
 {
-    return vm_rpm_ptr<UE_UProperty>(object + UEVars::offsets.UProperty.Size);
+    return vm_rpm_ptr<UE_UProperty>(object + UEVars::Offsets.UProperty.Size);
 }
 
 std::string UE_UArrayProperty::GetTypeStr() const
@@ -930,7 +789,7 @@ UE_UClass UE_UArrayProperty::StaticClass()
 
 UE_UEnum UE_UByteProperty::GetEnum() const
 {
-    return vm_rpm_ptr<UE_UEnum>(object + UEVars::offsets.UProperty.Size);
+    return vm_rpm_ptr<UE_UEnum>(object + UEVars::Offsets.UProperty.Size);
 }
 
 std::string UE_UByteProperty::GetTypeStr() const
@@ -949,7 +808,7 @@ UE_UClass UE_UByteProperty::StaticClass()
 
 uint8_t UE_UBoolProperty::GetFieldMask() const
 {
-    return vm_rpm_ptr<uint8_t>(object + UEVars::offsets.UProperty.Size + 3);
+    return vm_rpm_ptr<uint8_t>(object + UEVars::Offsets.UProperty.Size + 3);
 }
 
 std::string UE_UBoolProperty::GetTypeStr() const
@@ -1057,12 +916,12 @@ UE_UClass UE_UStrProperty::StaticClass()
 
 UE_UProperty UE_UEnumProperty::GetUnderlayingProperty() const
 {
-    return vm_rpm_ptr<UE_UProperty>(object + UEVars::offsets.UProperty.Size);
+    return vm_rpm_ptr<UE_UProperty>(object + UEVars::Offsets.UProperty.Size);
 }
 
 UE_UEnum UE_UEnumProperty::GetEnum() const
 {
-    return vm_rpm_ptr<UE_UEnum>(object + UEVars::offsets.UProperty.Size + sizeof(void *));
+    return vm_rpm_ptr<UE_UEnum>(object + UEVars::Offsets.UProperty.Size + sizeof(void *));
 }
 
 std::string UE_UEnumProperty::GetTypeStr() const
@@ -1070,7 +929,7 @@ std::string UE_UEnumProperty::GetTypeStr() const
     if (GetEnum())
         return "enum class " + GetEnum().GetName();
     
-    return "enum class " + GetUnderlayingProperty().GetType().second;
+    return GetUnderlayingProperty().GetType().second;
 }
 
 UE_UClass UE_UEnumProperty::StaticClass()
@@ -1081,7 +940,7 @@ UE_UClass UE_UEnumProperty::StaticClass()
 
 UE_UClass UE_UClassProperty::GetMetaClass() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + UEVars::offsets.UProperty.Size + sizeof(void *));
+    return vm_rpm_ptr<UE_UClass>(object + UEVars::Offsets.UProperty.Size + sizeof(void *));
 }
 
 std::string UE_UClassProperty::GetTypeStr() const
@@ -1103,7 +962,7 @@ std::string UE_USoftClassProperty::GetTypeStr() const
 
 UE_UProperty UE_USetProperty::GetElementProp() const
 {
-    return vm_rpm_ptr<UE_UProperty>(object + UEVars::offsets.UProperty.Size);
+    return vm_rpm_ptr<UE_UProperty>(object + UEVars::Offsets.UProperty.Size);
 }
 
 std::string UE_USetProperty::GetTypeStr() const
@@ -1119,12 +978,12 @@ UE_UClass UE_USetProperty::StaticClass()
 
 UE_UProperty UE_UMapProperty::GetKeyProp() const
 {
-    return vm_rpm_ptr<UE_UProperty>(object + UEVars::offsets.UProperty.Size);
+    return vm_rpm_ptr<UE_UProperty>(object + UEVars::Offsets.UProperty.Size);
 }
 
 UE_UProperty UE_UMapProperty::GetValueProp() const
 {
-    return vm_rpm_ptr<UE_UProperty>(object + UEVars::offsets.UProperty.Size + sizeof(void *));
+    return vm_rpm_ptr<UE_UProperty>(object + UEVars::Offsets.UProperty.Size + sizeof(void *));
 }
 
 std::string UE_UMapProperty::GetTypeStr() const
@@ -1140,7 +999,7 @@ UE_UClass UE_UMapProperty::StaticClass()
 
 UE_UProperty UE_UInterfaceProperty::GetInterfaceClass() const
 {
-    return vm_rpm_ptr<UE_UProperty>(object + UEVars::offsets.UProperty.Size);
+    return vm_rpm_ptr<UE_UProperty>(object + UEVars::Offsets.UProperty.Size);
 }
 
 std::string UE_UInterfaceProperty::GetTypeStr() const
@@ -1195,18 +1054,18 @@ std::string UE_FFieldClass::GetName() const
 
 UE_FField UE_FField::GetNext() const
 {
-    return vm_rpm_ptr<UE_FField>(object + UEVars::offsets.FField.Next);
+    return vm_rpm_ptr<UE_FField>(object + UEVars::Offsets.FField.Next);
 }
 
 std::string UE_FField::GetName() const
 {
-    auto name = UE_FName(object + UEVars::offsets.FField.NamePrivate);
+    auto name = UE_FName(object + UEVars::Offsets.FField.NamePrivate);
     return name.GetName();
 }
 
 UE_FFieldClass UE_FField::GetClass() const
 {
-    return vm_rpm_ptr<UE_FFieldClass>(object + UEVars::offsets.FField.ClassPrivate);
+    return vm_rpm_ptr<UE_FFieldClass>(object + UEVars::Offsets.FField.ClassPrivate);
 }
 
 std::string IFProperty::GetName() const
@@ -1243,22 +1102,22 @@ uint8_t IFProperty::GetFieldMask() const
 
 int32_t UE_FProperty::GetArrayDim() const
 {
-    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.FProperty.ArrayDim);
+    return vm_rpm_ptr<int32_t>(object + UEVars::Offsets.FProperty.ArrayDim);
 }
 
 int32_t UE_FProperty::GetSize() const
 {
-    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.FProperty.ElementSize);
+    return vm_rpm_ptr<int32_t>(object + UEVars::Offsets.FProperty.ElementSize);
 }
 
 int32_t UE_FProperty::GetOffset() const
 {
-    return vm_rpm_ptr<int32_t>(object + UEVars::offsets.FProperty.Offset_Internal);
+    return vm_rpm_ptr<int32_t>(object + UEVars::Offsets.FProperty.Offset_Internal);
 }
 
 uint64_t UE_FProperty::GetPropertyFlags() const
 {
-    return vm_rpm_ptr<uint64_t>(object + UEVars::offsets.FProperty.PropertyFlags);
+    return vm_rpm_ptr<uint64_t>(object + UEVars::Offsets.FProperty.PropertyFlags);
 }
 
 type UE_FProperty::GetType() const
@@ -1454,7 +1313,7 @@ IFProperty UE_FProperty::GetInterface() const { return IFProperty(this); }
 
 UE_UStruct UE_FStructProperty::GetStruct() const
 {
-    return vm_rpm_ptr<UE_UStruct>(object + UEVars::offsets.FProperty.Size);
+    return vm_rpm_ptr<UE_UStruct>(object + UEVars::Offsets.FProperty.Size);
 }
 
 std::string UE_FStructProperty::GetTypeStr() const
@@ -1464,7 +1323,7 @@ std::string UE_FStructProperty::GetTypeStr() const
 
 UE_UClass UE_FObjectPropertyBase::GetPropertyClass() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + UEVars::offsets.FProperty.Size);
+    return vm_rpm_ptr<UE_UClass>(object + UEVars::Offsets.FProperty.Size);
 }
 
 std::string UE_FObjectPropertyBase::GetTypeStr() const
@@ -1474,7 +1333,7 @@ std::string UE_FObjectPropertyBase::GetTypeStr() const
 
 UE_FProperty UE_FArrayProperty::GetInner() const
 {
-    return vm_rpm_ptr<UE_FProperty>(object + UEVars::offsets.FProperty.Size);
+    return vm_rpm_ptr<UE_FProperty>(object + UEVars::Offsets.FProperty.Size);
 }
 
 std::string UE_FArrayProperty::GetTypeStr() const
@@ -1484,7 +1343,7 @@ std::string UE_FArrayProperty::GetTypeStr() const
 
 UE_UEnum UE_FByteProperty::GetEnum() const
 {
-    return vm_rpm_ptr<UE_UEnum>(object + UEVars::offsets.FProperty.Size);
+    return vm_rpm_ptr<UE_UEnum>(object + UEVars::Offsets.FProperty.Size);
 }
 
 std::string UE_FByteProperty::GetTypeStr() const
@@ -1497,22 +1356,22 @@ std::string UE_FByteProperty::GetTypeStr() const
 
 uint8_t UE_FBoolProperty::GetFieldSize() const
 {
-    return vm_rpm_ptr<uint8_t>(object + UEVars::offsets.FProperty.Size);
+    return vm_rpm_ptr<uint8_t>(object + UEVars::Offsets.FProperty.Size);
 }
 
 uint8_t UE_FBoolProperty::GetByteOffset() const
 {
-    return vm_rpm_ptr<uint8_t>(object + UEVars::offsets.FProperty.Size + 1);
+    return vm_rpm_ptr<uint8_t>(object + UEVars::Offsets.FProperty.Size + 1);
 }
 
 uint8_t UE_FBoolProperty::GetByteMask() const
 {
-    return vm_rpm_ptr<uint8_t>(object + UEVars::offsets.FProperty.Size + 2);
+    return vm_rpm_ptr<uint8_t>(object + UEVars::Offsets.FProperty.Size + 2);
 }
 
 uint8_t UE_FBoolProperty::GetFieldMask() const
 {
-    return vm_rpm_ptr<uint8_t>(object + UEVars::offsets.FProperty.Size + 3);
+    return vm_rpm_ptr<uint8_t>(object + UEVars::Offsets.FProperty.Size + 3);
 }
 
 std::string UE_FBoolProperty::GetTypeStr() const
@@ -1528,13 +1387,13 @@ UE_FProperty UE_FEnumProperty::GetUnderlayingProperty() const
 {
     static uint32_t off = 0;
     if (off == 0) {
-        auto p = vm_rpm_ptr<UE_FProperty>(object + UEVars::offsets.FProperty.Size);
+        auto p = vm_rpm_ptr<UE_FProperty>(object + UEVars::Offsets.FProperty.Size);
         if (p && p.GetName() == "UnderlyingType") {
-            off = UEVars::offsets.FProperty.Size;
+            off = UEVars::Offsets.FProperty.Size;
         } else {
-            p = vm_rpm_ptr<UE_FProperty>(object + UEVars::offsets.FProperty.Size - sizeof(void*));
+            p = vm_rpm_ptr<UE_FProperty>(object + UEVars::Offsets.FProperty.Size - sizeof(void*));
             if (p && p.GetName() == "UnderlyingType") {
-                off = UEVars::offsets.FProperty.Size - sizeof(void*);
+                off = UEVars::Offsets.FProperty.Size - sizeof(void*);
             }
         }
         return off == 0 ? nullptr : p;
@@ -1547,13 +1406,13 @@ UE_UEnum UE_FEnumProperty::GetEnum() const
 {
     static uint32_t off = 0;
     if (off == 0) {
-        auto e = vm_rpm_ptr<UE_UEnum>(object + UEVars::offsets.FProperty.Size + sizeof(void*));
+        auto e = vm_rpm_ptr<UE_UEnum>(object + UEVars::Offsets.FProperty.Size + sizeof(void*));
         if (e && *(uint32_t *)e.GetCppTypeName().data() == 'mune') {
-            off = UEVars::offsets.FProperty.Size + sizeof(void*);
+            off = UEVars::Offsets.FProperty.Size + sizeof(void*);
         } else {
-            e = vm_rpm_ptr<UE_UEnum>(object + UEVars::offsets.FProperty.Size);
+            e = vm_rpm_ptr<UE_UEnum>(object + UEVars::Offsets.FProperty.Size);
             if (e && *(uint32_t *)e.GetCppTypeName().data() == 'mune') {
-                off = UEVars::offsets.FProperty.Size;
+                off = UEVars::Offsets.FProperty.Size;
             }
         }
         return off == 0 ? nullptr : e;
@@ -1572,7 +1431,7 @@ std::string UE_FEnumProperty::GetTypeStr() const
 
 UE_UClass UE_FClassProperty::GetMetaClass() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + UEVars::offsets.FProperty.Size + sizeof(void *));
+    return vm_rpm_ptr<UE_UClass>(object + UEVars::Offsets.FProperty.Size + sizeof(void *));
 }
 
 std::string UE_FClassProperty::GetTypeStr() const
@@ -1588,7 +1447,7 @@ std::string UE_FSoftClassProperty::GetTypeStr() const
 
 UE_FProperty UE_FSetProperty::GetElementProp() const
 {
-    return vm_rpm_ptr<UE_FProperty>(object + UEVars::offsets.FProperty.Size);
+    return vm_rpm_ptr<UE_FProperty>(object + UEVars::Offsets.FProperty.Size);
 }
 
 std::string UE_FSetProperty::GetTypeStr() const
@@ -1598,12 +1457,12 @@ std::string UE_FSetProperty::GetTypeStr() const
 
 UE_FProperty UE_FMapProperty::GetKeyProp() const
 {
-    return vm_rpm_ptr<UE_FProperty>(object + UEVars::offsets.FProperty.Size);
+    return vm_rpm_ptr<UE_FProperty>(object + UEVars::Offsets.FProperty.Size);
 }
 
 UE_FProperty UE_FMapProperty::GetValueProp() const
 {
-    return vm_rpm_ptr<UE_FProperty>(object + UEVars::offsets.FProperty.Size + sizeof(void *));
+    return vm_rpm_ptr<UE_FProperty>(object + UEVars::Offsets.FProperty.Size + sizeof(void *));
 }
 
 std::string UE_FMapProperty::GetTypeStr() const
@@ -1613,7 +1472,7 @@ std::string UE_FMapProperty::GetTypeStr() const
 
 UE_UClass UE_FInterfaceProperty::GetInterfaceClass() const
 {
-    return vm_rpm_ptr<UE_UClass>(object + UEVars::offsets.FProperty.Size);
+    return vm_rpm_ptr<UE_UClass>(object + UEVars::Offsets.FProperty.Size);
 }
 
 std::string UE_FInterfaceProperty::GetTypeStr() const
@@ -1623,7 +1482,7 @@ std::string UE_FInterfaceProperty::GetTypeStr() const
 
 UE_FName UE_FFieldPathProperty::GetPropertyName() const
 {
-    return vm_rpm_ptr<UE_FName>(object + UEVars::offsets.FProperty.Size);
+    return vm_rpm_ptr<UE_FName>(object + UEVars::Offsets.FProperty.Size);
 }
 
 std::string UE_FFieldPathProperty::GetTypeStr() const
@@ -1861,7 +1720,7 @@ void UE_UPackage::GenerateEnum(const UE_UEnum &object, std::vector<Enum> &arr)
     uint64_t max = 0;
     
     // size of FName struct
-    auto numOff = UEVars::offsets.FName.Number == 0 ? 4 : UEVars::offsets.FName.Number;
+    auto numOff = UEVars::Offsets.FName.Number == 0 ? 4 : UEVars::Offsets.FName.Number;
     uint64_t nameSize = ((numOff + 4) + 7) & ~(7);
     
     uint64_t pairSize = nameSize + 8;
@@ -1973,21 +1832,21 @@ void UE_UPackage::Process()
 
 bool UE_UPackage::AppendToBuffer(BufferFmt *pBufFmt)
 {
-	if (!pBufFmt)
-		return false;
+    if (!pBufFmt)
+        return false;
 
-	if (!Classes.size() && !Structures.size() && !Enums.size())
-		return false;
+    if (!Classes.size() && !Structures.size() && !Enums.size())
+        return false;
 
     // make safe to use as a file name
     std::string packageName = ioutils::replace_specials(GetObject().GetName(), '_');
 
     pBufFmt->append("#pragma once\n\n#include <cstdio>\n#include <string>\n#include <cstdint>\n\n");
 
-	pBufFmt->append("// Package: {}\n// Enums: {}\n// Structs: {}\n// Classes: {}\n\n",
+    pBufFmt->append("// Package: {}\n// Enums: {}\n// Structs: {}\n// Classes: {}\n\n",
                     packageName, Enums.size(), Structures.size(), Classes.size());
 
-	if (Enums.size())
+    if (Enums.size())
     {
         UE_UPackage::AppendEnumsToBuffer(Enums, pBufFmt);
     }
@@ -2002,5 +1861,5 @@ bool UE_UPackage::AppendToBuffer(BufferFmt *pBufFmt)
         UE_UPackage::AppendStructsToBuffer(Classes, pBufFmt);
     }
 
-	return true;
+    return true;
 }

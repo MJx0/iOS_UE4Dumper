@@ -4,9 +4,10 @@
 #include <string>
 #include <utility>
 #include <functional>
+#include <unordered_map>
 
-#include "../Offsets.hpp"
-#include "../../Utils/memory.hpp"
+#include "Offsets.hpp"
+#include "../Utils/memory.hpp"
 
 #include <KittyInclude.hpp>
 
@@ -30,18 +31,10 @@ public:
 
     virtual UE_Offsets *GetOffsets() const = 0;
     
+    virtual std::string GetNameByID(int32_t id) const;
     
-    // std::function<std::string(int)>
-    // custom method in case game has different implementation to get names
-    inline virtual NameByIndex_t CustomNameByIndex() const
-    {
-        return nullptr;
-    }
-    
-    // std::function<uint8_t*(int)>;
-    // custom method in case game has different implementation to get objects
-    inline virtual ObjectByIndex_t CustomObjectByIndex() const
-    {
-        return nullptr;
-    }
+protected:
+    virtual uint8_t *GetNameEntry_Internal(int32_t id) const;
+    virtual std::string GetNameEntryString_Internal(uint8_t *entry) const;
+    virtual std::string GetNameByID_Internal(int32_t id) const;
 };

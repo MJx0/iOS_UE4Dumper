@@ -1,6 +1,6 @@
 #pragma once
 
-#include "GameProfile.hpp"
+#include "../GameProfile.hpp"
 
 // Distyle
 // UE 4.23 / UE 4.24 ??

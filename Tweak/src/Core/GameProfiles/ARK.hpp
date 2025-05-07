@@ -1,6 +1,6 @@
 #pragma once
 
-#include "GameProfile.hpp"
+#include "../GameProfile.hpp"
 
 // ARK
 // UE 4.17

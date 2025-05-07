@@ -1,6 +1,6 @@
 #pragma once
 
-#include "GameProfile.hpp"
+#include "../GameProfile.hpp"
 
 // DeadByDaylight
 // UE 4.25

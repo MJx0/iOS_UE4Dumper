@@ -3,9 +3,6 @@
 #include <cstdint>
 #include <cstring>
 
-using NameByIndex_t = std::function<std::string(int)>;
-using ObjectByIndex_t = std::function<uint8_t*(int)>;
-
 struct UE_Offsets
 {
     UE_Offsets()

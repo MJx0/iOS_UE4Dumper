@@ -1,6 +1,6 @@
 #pragma once
 
-#include "GameProfile.hpp"
+#include "../GameProfile.hpp"
 
 // PUBGM
 // UE 4.18

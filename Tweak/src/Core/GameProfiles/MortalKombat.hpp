@@ -1,6 +1,6 @@
 #pragma once
 
-#include "GameProfile.hpp"
+#include "../GameProfile.hpp"
 
 // Mortal Kombat
 // UE 4.25+

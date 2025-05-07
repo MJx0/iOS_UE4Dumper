@@ -7,7 +7,7 @@
 #include <unordered_map>
 
 #include "../Utils/BufferFmt.hpp"
-#include "GameProfiles/GameProfile.hpp"
+#include "GameProfile.hpp"
 
 namespace Dumper
 {
@@ -24,8 +24,10 @@ namespace Dumper
         UE_DS_ERROR_INIT_OFFSETS,
         UE_DS_ERROR_EMPTY_PACKAGES
     };
-
-    DumpStatus Dump(IGameProfile *profile, std::unordered_map<std::string, BufferFmt> *outBuffersMap);
+    
+    DumpStatus InitUEVars(IGameProfile *gameProfile);
+    
+    DumpStatus Dump(std::unordered_map<std::string, BufferFmt> *outBuffersMap);
 
     std::string DumpStatusToStr(DumpStatus ds);
 }

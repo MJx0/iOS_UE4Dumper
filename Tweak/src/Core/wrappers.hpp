@@ -9,8 +9,8 @@
 #include <functional>
 #include <algorithm>
 
-#include "Offsets.hpp"
-
+struct UE_Offsets;
+class IGameProfile;
 class UE_UObjectArray;
 
 namespace UEVars
@@ -26,14 +26,10 @@ namespace UEVars
     extern uintptr_t ObjObjectsPtr;
 
     extern UE_UObjectArray ObjObjects;
+    
+    extern UE_Offsets Offsets;
 
-    extern UE_Offsets offsets;
-    
-    // custom method in case game has different implementation to get names
-    extern NameByIndex_t customNameByIndex;
-    
-    // custom method in case game has different implementation to get objects
-    extern ObjectByIndex_t customObjectByIndex;
+    extern IGameProfile *Profile;
 };
 
 template<typename T>
@@ -41,8 +37,6 @@ constexpr uint64_t GetMaxOfType()
 {
     return (1ull << (sizeof(T) * 0x8ull)) - 1;
 }
-
-std::string UE_GetNameByID(int32_t id);
 
 struct TArray
 {

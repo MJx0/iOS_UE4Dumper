@@ -88,7 +88,11 @@ void dump_thread()
         {
             if (pkg.compare(appID.UTF8String) == 0)
             {
-                dumpStatus = Dumper::Dump(it, &buffersMap);
+                dumpStatus = Dumper::InitUEVars(it);
+                if (dumpStatus == Dumper::UE_DS_NONE)
+                {
+                    dumpStatus = Dumper::Dump(&buffersMap);
+                }
                 goto done;
             }
         }
