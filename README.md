@@ -41,11 +41,11 @@ After this a third pop-up will appear showing you the optional function to share
 
 * An all-in-one dump file header
 
-##### logs.txt
+##### Logs.txt
 
 * Log file containing dump process logs
 
-##### ObjectsDump.txt
+##### Objects.txt
 
 * ObjObjects dump
 
