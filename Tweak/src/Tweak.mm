@@ -5,6 +5,7 @@
 #include <utility>
 #include <thread>
 #include <vector>
+#include <chrono>
 
 #import <SSZipArchive/ZipArchive.h>
 

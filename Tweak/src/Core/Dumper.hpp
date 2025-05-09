@@ -1,10 +1,9 @@
 #pragma once
 
-#include <vector>
-#include <string>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "../Utils/BufferFmt.hpp"
 #include "GameProfile.hpp"
@@ -24,10 +23,10 @@ namespace Dumper
         UE_DS_ERROR_INIT_OFFSETS,
         UE_DS_ERROR_EMPTY_PACKAGES
     };
-    
+
     DumpStatus InitUEVars(IGameProfile *gameProfile);
-    
+
     DumpStatus Dump(std::unordered_map<std::string, BufferFmt> *outBuffersMap);
 
     std::string DumpStatusToStr(DumpStatus ds);
-}
+} // namespace Dumper

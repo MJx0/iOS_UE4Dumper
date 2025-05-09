@@ -112,8 +112,8 @@ public:
             struct
             {
                 uint16_t Header = 0; // Offset to name entry header
-                std::function<bool(int16_t)> GetIsWide = [](int16_t header){ return header&1; };
-                std::function<size_t(int16_t)> GetLength = [](int16_t header){ return header>>6; };
+                std::function<bool(uint16_t)> GetIsWide = [](uint16_t header){ return (header&1)!=0; };
+                std::function<size_t(uint16_t)> GetLength = [](uint16_t header){ return header>>6; };
             } FNameEntry23;
             struct
             {

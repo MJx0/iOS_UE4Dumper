@@ -24,8 +24,8 @@ struct UE_Offsets
     struct
     {
         uint16_t Header = 0;
-        std::function<bool(int16_t)> GetIsWide = nullptr;
-        std::function<size_t(int16_t)> GetLength = nullptr;
+        std::function<bool(uint16_t)> GetIsWide = nullptr;
+        std::function<size_t(uint16_t)> GetLength = nullptr;
     } FNameEntry23;
     struct
     {

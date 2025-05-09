@@ -2,11 +2,13 @@
 
 #include <hash/hash.h>
 
-#include "../Utils/memory.hpp"
 #include "../Utils/BufferFmt.hpp"
+#include "../Utils/memory.hpp"
 
-#include "Offsets.hpp"
 #include "GameProfile.hpp"
+#include "Offsets.hpp"
+
+#include <utfcpp/unchecked.h>
 
 namespace UEVars
 {
@@ -21,10 +23,22 @@ namespace UEVars
     uintptr_t ObjObjectsPtr = 0;
 
     UE_UObjectArray ObjObjects{};
-    
+
     UE_Offsets Offsets{};
 
     IGameProfile *Profile = nullptr;
+} // namespace UEVars
+
+std::string FString::ToString() const
+{
+    if (!IsValid()) return "";
+
+    std::wstring wstr = ToWString();
+    if (wstr.empty()) return "";
+
+    std::string result = "";
+    utf8::unchecked::utf16to8(wstr.begin(), wstr.end(), std::back_inserter(result));
+    return result;
 }
 
 int32_t UE_UObjectArray::GetNumElements() const
@@ -39,23 +53,23 @@ uint8_t *UE_UObjectArray::GetObjectPtr(int32_t id) const
 {
     if (id < 0 || id >= GetNumElements() || !Objects)
         return nullptr;
-    
+
     if (!UEVars::isUsingFNamePool)
     {
         return vm_rpm_ptr<uint8_t *>((void *)((uintptr_t)Objects + (id * UEVars::Offsets.FUObjectItem.Size) + UEVars::Offsets.FUObjectItem.Object));
     }
-    
+
     const int32_t NumElementsPerChunk = 64 * 1024;
     const int32_t chunkIndex = id / NumElementsPerChunk;
     const int32_t withinChunkIndex = id % NumElementsPerChunk;
-    
+
     // if (chunkIndex >= NumChunks) return nullptr;
-    
+
     uint8_t *chunk = vm_rpm_ptr<uint8_t *>(Objects + chunkIndex);
     if (!chunk)
         return nullptr;
-    
-    return vm_rpm_ptr<uint8_t *>(chunk + (withinChunkIndex * UEVars::Offsets.FUObjectItem.Size)  + UEVars::Offsets.FUObjectItem.Object);
+
+    return vm_rpm_ptr<uint8_t *>(chunk + (withinChunkIndex * UEVars::Offsets.FUObjectItem.Size) + UEVars::Offsets.FUObjectItem.Object);
 }
 
 void UE_UObjectArray::ForEachObject(const std::function<bool(uint8_t *)> &callback) const
@@ -95,36 +109,36 @@ int UE_FName::GetNumber() const
 {
     if (!object || UEVars::isUsingOutlineNumberName)
         return 0;
-    
+
     return vm_rpm_ptr<int32_t>(object + UEVars::Offsets.FName.Number);
 }
 
 std::string UE_FName::GetName() const
 {
     if (!object) return "";
-    
+
     int32_t index = 0;
     if (!vm_rpm_ptr(object, &index, sizeof(int32_t)) && index < 0)
         return "";
-    
+
     std::string name = UEVars::Profile->GetNameByID(index);
     if (name.empty()) return "";
-    
+
     if (!UEVars::isUsingOutlineNumberName)
     {
         int32_t number = GetNumber();
         if (number > 0)
         {
-            name += '_' + std::to_string(number-1);
+            name += '_' + std::to_string(number - 1);
         }
     }
-    
+
     auto pos = name.rfind('/');
     if (pos != std::string::npos)
     {
         name = name.substr(pos + 1);
     }
-    
+
     return name;
 }
 
@@ -196,7 +210,7 @@ std::string UE_UObject::GetCppTypeName() const
         return "class";
     }
 
-    return  "struct";
+    return "struct";
 }
 
 std::string UE_UObject::GetCppName() const
@@ -491,7 +505,6 @@ UE_UClass UE_UStruct::StaticClass()
     return obj;
 }
 
-
 UE_FField UE_UStruct::FindChildProp(const std::string &name) const
 {
     for (auto prop = GetChildProperties(); prop; prop = prop.GetNext())
@@ -688,15 +701,15 @@ UE_UClass UE_UClass::StaticClass()
     return obj;
 }
 
-TArray UE_UEnum::GetNames() const
+TArray<uint8_t> UE_UEnum::GetNames() const
 {
-    return vm_rpm_ptr<TArray>(object + UEVars::Offsets.UEnum.Names);
+    return vm_rpm_ptr<TArray<uint8_t>>(object + UEVars::Offsets.UEnum.Names);
 }
 
 std::string UE_UEnum::GetName() const
 {
     std::string name = UE_UField::GetName();
-    if(!name.empty() && name[0] != 'E')
+    if (!name.empty() && name[0] != 'E')
         return "E" + name;
     return name;
 }
@@ -928,7 +941,7 @@ std::string UE_UEnumProperty::GetTypeStr() const
 {
     if (GetEnum())
         return "enum class " + GetEnum().GetName();
-    
+
     return GetUnderlayingProperty().GetType().second;
 }
 
@@ -1120,192 +1133,192 @@ uint64_t UE_FProperty::GetPropertyFlags() const
     return vm_rpm_ptr<uint64_t>(object + UEVars::Offsets.FProperty.PropertyFlags);
 }
 
-type UE_FProperty::GetType() const
+PropTypeInfo UE_FProperty::GetType() const
 {
     auto objectClass = GetClass();
-    type type = {PropertyType::Unknown, objectClass.GetName()};
-    
+    PropTypeInfo type = {PropertyType::Unknown, objectClass.GetName()};
+
     auto &str = type.second;
     auto hash = Hash(str.c_str(), str.size());
     switch (hash)
     {
-        case HASH("StructProperty"):
-        {
-            auto obj = this->Cast<UE_FStructProperty>();
-            type = {PropertyType::StructProperty, obj.GetTypeStr()};
-            break;
-        }
-        case HASH("ObjectProperty"):
-        {
-            auto obj = this->Cast<UE_FObjectPropertyBase>();
-            type = {PropertyType::ObjectProperty, obj.GetTypeStr()};
-            break;
-        }
-        case HASH("SoftObjectProperty"):
-        {
-            auto obj = this->Cast<UE_FObjectPropertyBase>();
-            type = {PropertyType::SoftObjectProperty, "struct TSoftObjectPtr<" + obj.GetPropertyClass().GetCppName() + ">"};
-            break;
-        }
-        case HASH("FloatProperty"):
-        {
-            type = {PropertyType::FloatProperty, "float"};
-            break;
-        }
-        case HASH("ByteProperty"):
-        {
-            auto obj = this->Cast<UE_FByteProperty>();
-            type = {PropertyType::ByteProperty, obj.GetTypeStr()};
-            break;
-        }
-        case HASH("BoolProperty"):
-        {
-            auto obj = this->Cast<UE_FBoolProperty>();
-            type = {PropertyType::BoolProperty, obj.GetTypeStr()};
-            break;
-        }
-        case HASH("IntProperty"):
-        {
-            type = {PropertyType::IntProperty, "int32_t"};
-            break;
-        }
-        case HASH("Int8Property"):
-        {
-            type = {PropertyType::Int8Property, "int8_t"};
-            break;
-        }
-        case HASH("Int16Property"):
-        {
-            type = {PropertyType::Int16Property, "int16_t"};
-            break;
-        }
-        case HASH("Int64Property"):
-        {
-            type = {PropertyType::Int64Property, "int64_t"};
-            break;
-        }
-        case HASH("UInt16Property"):
-        {
-            type = {PropertyType::UInt16Property, "uint16_t"};
-            break;
-        }
-        case HASH("Int32Property"):
-        {
-            type = {PropertyType::Int32Property, "int32_t"};
-            break;
-        }
-        case HASH("UInt32Property"):
-        {
-            type = {PropertyType::UInt32Property, "uint32_t"};
-            break;
-        }
-        case HASH("UInt64Property"):
-        {
-            type = {PropertyType::UInt64Property, "uint64_t"};
-            break;
-        }
-        case HASH("NameProperty"):
-        {
-            type = {PropertyType::NameProperty, "struct FName"};
-            break;
-        }
-        case HASH("DelegateProperty"):
-        {
-            type = {PropertyType::DelegateProperty, "struct FDelegate"};
-            break;
-        }
-        case HASH("SetProperty"):
-        {
-            auto obj = this->Cast<UE_FSetProperty>();
-            type = {PropertyType::SetProperty, obj.GetTypeStr()};
-            break;
-        }
-        case HASH("ArrayProperty"):
-        {
-            auto obj = this->Cast<UE_FArrayProperty>();
-            type = {PropertyType::ArrayProperty, obj.GetTypeStr()};
-            break;
-        }
-        case HASH("WeakObjectProperty"):
-        {
-            auto obj = this->Cast<UE_FStructProperty>();
-            type = {PropertyType::WeakObjectProperty, "struct TWeakObjectPtr<" + obj.GetTypeStr() + ">"};
-            break;
-        }
-        case HASH("LazyObjectProperty"):
-        {
-            auto obj = this->Cast<UE_FStructProperty>();
-            type = {PropertyType::LazyObjectProperty, "struct TLazyObjectPtr<" + obj.GetTypeStr() + ">"};
-            break;
-        }
-        case HASH("StrProperty"):
-        {
-            type = {PropertyType::StrProperty, "struct FString"};
-            break;
-        }
-        case HASH("TextProperty"):
-        {
-            type = {PropertyType::TextProperty, "struct FText"};
-            break;
-        }
-        case HASH("MulticastSparseDelegateProperty"):
-        {
-            type = {PropertyType::MulticastSparseDelegateProperty, "struct FMulticastSparseDelegate"};
-            break;
-        }
-        case HASH("EnumProperty"):
-        {
-            auto obj = this->Cast<UE_FEnumProperty>();
-            type = {PropertyType::EnumProperty, obj.GetTypeStr()};
-            break;
-        }
-        case HASH("DoubleProperty"):
-        {
-            type = {PropertyType::DoubleProperty, "double"};
-            break;
-        }
-        case HASH("MulticastDelegateProperty"):
-        {
-            type = {PropertyType::MulticastDelegateProperty, "FMulticastDelegate"};
-            break;
-        }
-        case HASH("ClassProperty"):
-        {
-            auto obj = this->Cast<UE_FClassProperty>();
-            type = {PropertyType::ClassProperty, obj.GetTypeStr()};
-            break;
-        }
-        case HASH("MulticastInlineDelegateProperty"):
-        {
-            type = {PropertyType::MulticastDelegateProperty, "struct FMulticastInlineDelegate"};
-            break;
-        }
-        case HASH("MapProperty"):
-        {
-            auto obj = this->Cast<UE_FMapProperty>();
-            type = {PropertyType::MapProperty, obj.GetTypeStr()};
-            break;
-        }
-        case HASH("InterfaceProperty"):
-        {
-            auto obj = this->Cast<UE_FInterfaceProperty>();
-            type = {PropertyType::InterfaceProperty, obj.GetTypeStr()};
-            break;
-        }
-        case HASH("FieldPathProperty"):
-        {
-            auto obj = this->Cast<UE_FFieldPathProperty>();
-            type = {PropertyType::FieldPathProperty, obj.GetTypeStr()};
-            break;
-        }
-        case HASH("SoftClassProperty"):
-        {
-            auto obj = this->Cast<UE_FSoftClassProperty>();
-            type = {PropertyType::SoftClassProperty, obj.GetTypeStr()};
-            break;
-        }
+    case HASH("StructProperty"):
+    {
+        auto obj = this->Cast<UE_FStructProperty>();
+        type = {PropertyType::StructProperty, obj.GetTypeStr()};
+        break;
     }
-    
+    case HASH("ObjectProperty"):
+    {
+        auto obj = this->Cast<UE_FObjectPropertyBase>();
+        type = {PropertyType::ObjectProperty, obj.GetTypeStr()};
+        break;
+    }
+    case HASH("SoftObjectProperty"):
+    {
+        auto obj = this->Cast<UE_FObjectPropertyBase>();
+        type = {PropertyType::SoftObjectProperty, "struct TSoftObjectPtr<" + obj.GetPropertyClass().GetCppName() + ">"};
+        break;
+    }
+    case HASH("FloatProperty"):
+    {
+        type = {PropertyType::FloatProperty, "float"};
+        break;
+    }
+    case HASH("ByteProperty"):
+    {
+        auto obj = this->Cast<UE_FByteProperty>();
+        type = {PropertyType::ByteProperty, obj.GetTypeStr()};
+        break;
+    }
+    case HASH("BoolProperty"):
+    {
+        auto obj = this->Cast<UE_FBoolProperty>();
+        type = {PropertyType::BoolProperty, obj.GetTypeStr()};
+        break;
+    }
+    case HASH("IntProperty"):
+    {
+        type = {PropertyType::IntProperty, "int32_t"};
+        break;
+    }
+    case HASH("Int8Property"):
+    {
+        type = {PropertyType::Int8Property, "int8_t"};
+        break;
+    }
+    case HASH("Int16Property"):
+    {
+        type = {PropertyType::Int16Property, "int16_t"};
+        break;
+    }
+    case HASH("Int64Property"):
+    {
+        type = {PropertyType::Int64Property, "int64_t"};
+        break;
+    }
+    case HASH("UInt16Property"):
+    {
+        type = {PropertyType::UInt16Property, "uint16_t"};
+        break;
+    }
+    case HASH("Int32Property"):
+    {
+        type = {PropertyType::Int32Property, "int32_t"};
+        break;
+    }
+    case HASH("UInt32Property"):
+    {
+        type = {PropertyType::UInt32Property, "uint32_t"};
+        break;
+    }
+    case HASH("UInt64Property"):
+    {
+        type = {PropertyType::UInt64Property, "uint64_t"};
+        break;
+    }
+    case HASH("NameProperty"):
+    {
+        type = {PropertyType::NameProperty, "struct FName"};
+        break;
+    }
+    case HASH("DelegateProperty"):
+    {
+        type = {PropertyType::DelegateProperty, "struct FDelegate"};
+        break;
+    }
+    case HASH("SetProperty"):
+    {
+        auto obj = this->Cast<UE_FSetProperty>();
+        type = {PropertyType::SetProperty, obj.GetTypeStr()};
+        break;
+    }
+    case HASH("ArrayProperty"):
+    {
+        auto obj = this->Cast<UE_FArrayProperty>();
+        type = {PropertyType::ArrayProperty, obj.GetTypeStr()};
+        break;
+    }
+    case HASH("WeakObjectProperty"):
+    {
+        auto obj = this->Cast<UE_FStructProperty>();
+        type = {PropertyType::WeakObjectProperty, "struct TWeakObjectPtr<" + obj.GetTypeStr() + ">"};
+        break;
+    }
+    case HASH("LazyObjectProperty"):
+    {
+        auto obj = this->Cast<UE_FStructProperty>();
+        type = {PropertyType::LazyObjectProperty, "struct TLazyObjectPtr<" + obj.GetTypeStr() + ">"};
+        break;
+    }
+    case HASH("StrProperty"):
+    {
+        type = {PropertyType::StrProperty, "struct FString"};
+        break;
+    }
+    case HASH("TextProperty"):
+    {
+        type = {PropertyType::TextProperty, "struct FText"};
+        break;
+    }
+    case HASH("MulticastSparseDelegateProperty"):
+    {
+        type = {PropertyType::MulticastSparseDelegateProperty, "struct FMulticastSparseDelegate"};
+        break;
+    }
+    case HASH("EnumProperty"):
+    {
+        auto obj = this->Cast<UE_FEnumProperty>();
+        type = {PropertyType::EnumProperty, obj.GetTypeStr()};
+        break;
+    }
+    case HASH("DoubleProperty"):
+    {
+        type = {PropertyType::DoubleProperty, "double"};
+        break;
+    }
+    case HASH("MulticastDelegateProperty"):
+    {
+        type = {PropertyType::MulticastDelegateProperty, "FMulticastDelegate"};
+        break;
+    }
+    case HASH("ClassProperty"):
+    {
+        auto obj = this->Cast<UE_FClassProperty>();
+        type = {PropertyType::ClassProperty, obj.GetTypeStr()};
+        break;
+    }
+    case HASH("MulticastInlineDelegateProperty"):
+    {
+        type = {PropertyType::MulticastDelegateProperty, "struct FMulticastInlineDelegate"};
+        break;
+    }
+    case HASH("MapProperty"):
+    {
+        auto obj = this->Cast<UE_FMapProperty>();
+        type = {PropertyType::MapProperty, obj.GetTypeStr()};
+        break;
+    }
+    case HASH("InterfaceProperty"):
+    {
+        auto obj = this->Cast<UE_FInterfaceProperty>();
+        type = {PropertyType::InterfaceProperty, obj.GetTypeStr()};
+        break;
+    }
+    case HASH("FieldPathProperty"):
+    {
+        auto obj = this->Cast<UE_FFieldPathProperty>();
+        type = {PropertyType::FieldPathProperty, obj.GetTypeStr()};
+        break;
+    }
+    case HASH("SoftClassProperty"):
+    {
+        auto obj = this->Cast<UE_FSoftClassProperty>();
+        type = {PropertyType::SoftClassProperty, obj.GetTypeStr()};
+        break;
+    }
+    }
+
     return type;
 }
 
@@ -1386,38 +1399,48 @@ std::string UE_FBoolProperty::GetTypeStr() const
 UE_FProperty UE_FEnumProperty::GetUnderlayingProperty() const
 {
     static uint32_t off = 0;
-    if (off == 0) {
+    if (off == 0)
+    {
         auto p = vm_rpm_ptr<UE_FProperty>(object + UEVars::Offsets.FProperty.Size);
-        if (p && p.GetName() == "UnderlyingType") {
+        if (p && p.GetName() == "UnderlyingType")
+        {
             off = UEVars::Offsets.FProperty.Size;
-        } else {
-            p = vm_rpm_ptr<UE_FProperty>(object + UEVars::Offsets.FProperty.Size - sizeof(void*));
-            if (p && p.GetName() == "UnderlyingType") {
-                off = UEVars::Offsets.FProperty.Size - sizeof(void*);
+        }
+        else
+        {
+            p = vm_rpm_ptr<UE_FProperty>(object + UEVars::Offsets.FProperty.Size - sizeof(void *));
+            if (p && p.GetName() == "UnderlyingType")
+            {
+                off = UEVars::Offsets.FProperty.Size - sizeof(void *);
             }
         }
         return off == 0 ? nullptr : p;
     }
-        
+
     return vm_rpm_ptr<UE_FProperty>(object + off);
 }
 
 UE_UEnum UE_FEnumProperty::GetEnum() const
 {
     static uint32_t off = 0;
-    if (off == 0) {
-        auto e = vm_rpm_ptr<UE_UEnum>(object + UEVars::Offsets.FProperty.Size + sizeof(void*));
-        if (e && *(uint32_t *)e.GetCppTypeName().data() == 'mune') {
-            off = UEVars::Offsets.FProperty.Size + sizeof(void*);
-        } else {
+    if (off == 0)
+    {
+        auto e = vm_rpm_ptr<UE_UEnum>(object + UEVars::Offsets.FProperty.Size + sizeof(void *));
+        if (e && *(uint32_t *)e.GetCppTypeName().data() == 'mune')
+        {
+            off = UEVars::Offsets.FProperty.Size + sizeof(void *);
+        }
+        else
+        {
             e = vm_rpm_ptr<UE_UEnum>(object + UEVars::Offsets.FProperty.Size);
-            if (e && *(uint32_t *)e.GetCppTypeName().data() == 'mune') {
+            if (e && *(uint32_t *)e.GetCppTypeName().data() == 'mune')
+            {
                 off = UEVars::Offsets.FProperty.Size;
             }
         }
         return off == 0 ? nullptr : e;
     }
-    
+
     return vm_rpm_ptr<UE_UEnum>(object + off);
 }
 
@@ -1425,7 +1448,7 @@ std::string UE_FEnumProperty::GetTypeStr() const
 {
     if (GetEnum())
         return "enum class " + GetEnum().GetName();
-    
+
     return GetUnderlayingProperty().GetType().second;
 }
 
@@ -1600,11 +1623,11 @@ void UE_UPackage::GenerateStruct(const UE_UStruct &object, std::vector<Struct> &
     s.Inherited = 0;
     s.Name = object.GetName();
     s.FullName = object.GetFullName();
-    
+
     bool isClass = object.IsA<UE_UClass>();
     s.CppName = isClass ? "class " : "struct ";
     s.CppName += object.GetCppName();
-    
+
     auto super = object.GetSuper();
     if (super)
     {
@@ -1714,36 +1737,36 @@ void UE_UPackage::GenerateEnum(const UE_UEnum &object, std::vector<Enum> &arr)
 {
     Enum e;
     e.FullName = object.GetFullName();
-    
+
     auto names = object.GetNames();
-    
+
     uint64_t max = 0;
-    
+
     // size of FName struct
     auto numOff = UEVars::Offsets.FName.Number == 0 ? 4 : UEVars::Offsets.FName.Number;
     uint64_t nameSize = ((numOff + 4) + 7) & ~(7);
-    
+
     uint64_t pairSize = nameSize + 8;
-    
-    for (int32_t i = 0; i < names.Count; i++)
+
+    for (int32_t i = 0; i < names.Num(); i++)
     {
-        auto pair = names.Data + i * pairSize;
+        auto pair = names.GetData() + i * pairSize;
         auto name = UE_FName(pair);
         auto str = name.GetName();
         auto pos = str.find_last_of(':');
         if (pos != std::string::npos)
             str = str.substr(pos + 1);
-        
+
         auto value = vm_rpm_ptr<uint64_t>(pair + nameSize);
         if (value > max)
             max = value;
-        
+
         str.append(" = ").append(fmt::format("{}", value));
         e.Members.push_back(str);
     }
-    
+
     const char *type = nullptr;
-    
+
     if (max > GetMaxOfType<uint32_t>())
         type = " : uint64_t";
     else if (max > GetMaxOfType<uint16_t>())
@@ -1752,9 +1775,9 @@ void UE_UPackage::GenerateEnum(const UE_UEnum &object, std::vector<Enum> &arr)
         type = " : uint16_t";
     else
         type = " : uint8_t";
-    
+
     e.CppName = "enum class " + object.GetName() + type;
-    
+
     if (e.Members.size())
     {
         arr.push_back(e);
@@ -1766,7 +1789,7 @@ void UE_UPackage::AppendStructsToBuffer(std::vector<Struct> &arr, BufferFmt *pBu
     for (auto &s : arr)
     {
         pBufFmt->append("// Object: {}\n// Size: {:#04x} (Inherited: {:#04x})\n{}\n{{",
-                       s.FullName, s.Size, s.Inherited, s.CppName);
+                        s.FullName, s.Size, s.Inherited, s.CppName);
 
         if (s.Members.size())
         {
@@ -1779,10 +1802,10 @@ void UE_UPackage::AppendStructsToBuffer(std::vector<Struct> &arr, BufferFmt *pBu
         {
             if (s.Members.size())
                 pBufFmt->append("\n");
-            
+
             for (auto &f : s.Functions)
             {
-                void *funcOffset = f.Func ? (void*)(f.Func - UEVars::BaseAddress) : nullptr;
+                void *funcOffset = f.Func ? (void *)(f.Func - UEVars::BaseAddress) : nullptr;
                 pBufFmt->append("\n\n\t// Object: {}\n\t// Flags: [{}]\n\t// Offset: {}\n\t// Params: [ Num({}) Size({:#04x}) ]\n\t{}({});", f.FullName, f.Flags, funcOffset, f.NumParams, f.ParamSize, f.CppName, f.Params);
             }
         }
@@ -1850,12 +1873,12 @@ bool UE_UPackage::AppendToBuffer(BufferFmt *pBufFmt)
     {
         UE_UPackage::AppendEnumsToBuffer(Enums, pBufFmt);
     }
-    
+
     if (Structures.size())
     {
         UE_UPackage::AppendStructsToBuffer(Structures, pBufFmt);
     }
-    
+
     if (Classes.size())
     {
         UE_UPackage::AppendStructsToBuffer(Classes, pBufFmt);
