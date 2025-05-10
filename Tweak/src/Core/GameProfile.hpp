@@ -6,7 +6,7 @@
 #include <functional>
 #include <unordered_map>
 
-#include "Offsets.hpp"
+#include "UE_Offsets.hpp"
 #include "../Utils/memory.hpp"
 
 #include <KittyInclude.hpp>

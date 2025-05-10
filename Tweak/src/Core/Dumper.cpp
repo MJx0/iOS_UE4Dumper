@@ -93,23 +93,23 @@ namespace Dumper
         logsBufferFmt.append("Executable: {}\n", exe_info.name);
         if (UEVars::pagezero_size > 0)
         {
-            logsBufferFmt.append("__PAGEZERO Size: {:#x}\n", UEVars::pagezero_size);
+            logsBufferFmt.append("__PAGEZERO Size: 0x{:X}\n", UEVars::pagezero_size);
         }
         else
         {
             logsBufferFmt.append("__PAGEZERO not available\n");
         }
-        logsBufferFmt.append("BaseAddress: {:#08x}\n", UEVars::BaseAddress);
+        logsBufferFmt.append("BaseAddress: 0x{:X}\n", UEVars::BaseAddress);
         logsBufferFmt.append("==========================\n");
 
         if (!UEVars::isUsingFNamePool)
         {
-            logsBufferFmt.append("GNames: [<Base> + {:#08x}] = {:#08x}\n",
+            logsBufferFmt.append("GNames: [<Base> + 0x{:X}] = 0x{:X}\n",
                                  UEVars::GNamesPtr - UEVars::BaseAddress, UEVars::GNamesPtr);
         }
         else
         {
-            logsBufferFmt.append("FNamePool: [<Base> + {:#08x}] = {:#08x}\n",
+            logsBufferFmt.append("FNamePool: [<Base> + 0x{:X}] = 0x{:X}\n",
                                  UEVars::NamePoolDataPtr - UEVars::BaseAddress, UEVars::NamePoolDataPtr);
         }
 
@@ -120,7 +120,7 @@ namespace Dumper
         }
         logsBufferFmt.append("==========================\n");
 
-        logsBufferFmt.append("ObjObjects: [<Base> + {:#08x}] = {:#08x}\n", UEVars::ObjObjectsPtr - UEVars::BaseAddress, UEVars::ObjObjectsPtr);
+        logsBufferFmt.append("ObjObjects: [<Base> + 0x{:X}] = 0x{:X}\n", UEVars::ObjObjectsPtr - UEVars::BaseAddress, UEVars::ObjObjectsPtr);
         logsBufferFmt.append("ObjObjects Num: {}\n", UEVars::ObjObjects.GetNumElements());
         logsBufferFmt.append("Test Dumping First 5 Name Entries\n");
         for (int i = 0; i < 5; i++)
