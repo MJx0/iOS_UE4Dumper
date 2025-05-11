@@ -247,7 +247,7 @@ namespace Dumper
             outBuffersMap->insert({"script.json", BufferFmt()});
             BufferFmt &scriptBufferFmt = outBuffersMap->at("script.json");
 
-            scriptBufferFmt.append("Generating script json...\nFunctions: {}\n", jf_ns::jsonFunctions.size());
+            logsBufferFmt.append("Generating script json...\nFunctions: {}\n", jf_ns::jsonFunctions.size());
 
             json js;
             for (const auto &jf : jf_ns::jsonFunctions)
