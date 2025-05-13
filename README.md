@@ -74,5 +74,6 @@ make clean package
 ## Credits & Thanks
 
 * [UE4Dumper-4.25](https://github.com/guttir14/UnrealDumper-4.25)
-* [Il2cppDumper](https://github.com/Perfare/Il2CppDumper/blob/master/README.md)
+* [Il2cppDumper](https://github.com/Perfare/Il2CppDumper)
+* [Dumper-7](https://github.com/Encryqed/Dumper-7)
 * @Katzi for testing and writing this README for me XD
